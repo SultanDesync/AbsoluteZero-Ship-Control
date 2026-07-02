@@ -1,0 +1,78 @@
+# AbsoluteZero — Mouse Alignment Assist for Starfield
+
+A lightweight SFSE plugin that gently centers your ship's mouse aim when idle during flight. No joystick input, no throttle injection, no binding wizard — just smooth exponential decay toward center.
+
+Mechanically inspired by [Xilandro](https://www.nexusmods.com/starfield/users/4477498)'s **Flight Controls Autoalign** (out of support since 2024). Logic was independently developed.
+
+> **Note**: This is a standalone sister project to [AbsoluteHOTAS](https://www.nexusmods.com/starfield/mods/210). If you already use AbsoluteHOTAS, you don't need this — enable `bAlignmentAssist = true` in AbsoluteHOTAS.ini instead.
+
+---
+
+## Requirements
+
+- **Starfield** 1.16.242+
+- **[SFSE](https://sfse.silverlock.org/)** 0.2.20+
+
+## Installation
+
+1. Extract `AbsoluteZero.dll` and `AbsoluteZero.ini` to `Data\SFSE\Plugins\`
+
+## Configuration
+
+Edit `Data\SFSE\Plugins\AbsoluteZero.ini`:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `bEnabled` | `true` | Enable/disable alignment assist |
+| `fRadius` | `140.0` | Accumulator distance from center within which assist activates (0–200). Default is 70% of the circular range. |
+| `iIdleMs` | `80` | Milliseconds the mouse must be idle before decay starts |
+| `fDecayRate` | `12.0` | Exponential decay speed — higher values snap to center faster |
+| `iPollRateHz` | `120` | Polling frequency in Hz |
+| `iSuppressKey` | `0x42` (B) | Hold this key to suppress auto-centering. Set to `0` to disable. [Virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes) |
+| `bLogEnabled` | `false` | Write debug info to `AbsoluteZero.log` |
+
+## Live Tuning (In-Game Hotkeys)
+
+Adjust settings on the fly without leaving the cockpit:
+
+| Hotkey | Action | Step |
+|--------|--------|------|
+| `Alt + Numpad+` / `Numpad-` | Radius ↑/↓ | ±2.0 |
+| `Ctrl + Numpad+` / `Numpad-` | Idle delay ↑/↓ | ±10 ms |
+| `Shift + Numpad+` / `Numpad-` | Decay rate ↑/↓ | ±0.5 |
+| `Ctrl + Alt + Numpad0` | Toggle enable/disable | — |
+| `Ctrl + Alt + S` | Save current settings to INI | — |
+
+All changes are logged to `AbsoluteZero.log` (always, regardless of `bLogEnabled`). Use `Ctrl+Alt+S` to persist your tuned values so they survive a restart.
+
+## How It Works
+
+1. **Hook**: At startup, the plugin AOB-scans for Starfield's rotational writer block and installs a trampoline hook to capture the source object pointer.
+2. **Alignment Assist**: A polling thread observes the captured mouse accumulator (`source+0x4C` yaw, `source+0x50` pitch). When the mouse is idle and within the configured radius, it applies exponential decay to gently center the aim.
+
+## Compatibility
+
+- **Do NOT load alongside AbsoluteHOTAS** — both hook the same writer block. The plugin detects `AbsoluteHOTAS.dll` at load time and gracefully disables itself.
+- Compatible with other SFSE plugins that don't modify the rotational writer block.
+
+## Building
+
+Requires CMake 3.30+, Ninja, MSVC (C++23), and vcpkg.
+
+```bash
+cmake --preset build-release
+cmake --build build/release
+```
+
+Output: `contrib/PluginRelease/Data/SFSE/Plugins/AbsoluteZero.dll`
+
+## License
+
+GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
+
+## Credits
+
+- **Antigravity** — Development
+- **Xilandro** — Mechanical inspiration (Flight Controls Autoalign)
+- **Starfield RE Team** — [CommonLibSF](https://github.com/Starfield-Reverse-Engineering/CommonLibSF)
+- **Ian Patterson / Stephen Abel** — [SFSE](https://sfse.silverlock.org/)
