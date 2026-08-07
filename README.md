@@ -11,6 +11,17 @@ Mechanically inspired by [Xilandro](https://www.nexusmods.com/starfield/users/44
 The gameplay DLL remains independent. Absolute Workbench is an optional shared
 frontend for the same daughter-owned INI and live configuration.
 
+## Absolute suite
+
+- [Absolute Workbench](https://github.com/SultanDesync/Absolute-Workbench) — optional
+  shared configuration UI for this plugin and the other daughter mods.
+- [AbsoluteHOTAS](https://github.com/SultanDesync/AbsoluteHOTAS) — complete HOTAS/HOSAS
+  flight-control stack; it already contains alignment assistance, so do not load both.
+- [Absolute Head Tracking](https://github.com/SultanDesync/Absolute-Head-Tracking) —
+  standalone OpenTrack cockpit camera control compatible with AbsoluteZero.
+- **Absolute Power** — priority-based ship-power presets and automation; its public
+  repository is forthcoming.
+
 ## Requirements
 
 - **Starfield** 1.16.242+
