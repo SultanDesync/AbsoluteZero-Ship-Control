@@ -8,6 +8,9 @@ Mechanically inspired by [Xilandro](https://www.nexusmods.com/starfield/users/44
 
 ---
 
+The gameplay DLL remains independent. Absolute Workbench is an optional shared
+frontend for the same daughter-owned INI and live configuration.
+
 ## Requirements
 
 - **Starfield** 1.16.242+
@@ -31,7 +34,17 @@ Edit `Data\SFSE\Plugins\AbsoluteZero.ini`:
 | `iSuppressKey` | `0x42` (B) | Hold this key to suppress auto-centering. Set to `0` to disable. [Virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes) |
 | `bLogEnabled` | `false` | Write debug info to `AbsoluteZero.log` |
 
-## Live Tuning (In-Game Hotkeys)
+## Configuration UI and live tuning
+
+Install Absolute Workbench beside AbsoluteZero to get pages for Mouse Alignment,
+Locked Reticule, and diagnostics. Workbench discovers
+`AbsoluteZero.workbench.json`, queries the size-versioned
+`AbsoluteZero_QueryApi(1)` POD interface, and asks this DLL to apply, save,
+reload, and read back its own configuration. No C++ objects or gameplay ownership
+cross the DLL boundary.
+
+Without Workbench, the existing in-game hotkeys and direct INI editing remain
+available:
 
 Adjust settings on the fly without leaving the cockpit:
 
@@ -45,12 +58,25 @@ Adjust settings on the fly without leaving the cockpit:
 
 All changes are logged to `AbsoluteZero.log` (always, regardless of `bLogEnabled`). Use `Ctrl+Alt+S` to persist your tuned values so they survive a restart.
 
+While Workbench is open or capturing a key, AbsoluteZero updates hotkey edge
+state without executing daughter actions. Closing the host therefore cannot
+replay a chord that was pressed in the UI.
+
 ## How It Works
+
+Runtime installation is deferred until SFSE reports that every plugin is loaded.
+AbsoluteZero then checks both the installed file and loaded module for
+AbsoluteHOTAS before touching the shared writer path. Its stoppable worker reads
+mutex-protected configuration snapshots; UI and hotkey changes never race the
+polling loop.
 
 1. **Hook**: At startup, the plugin AOB-scans for Starfield's rotational writer block and installs a trampoline hook to capture the source object pointer.
 2. **Alignment Assist**: A polling thread observes the captured mouse accumulator (`source+0x4C` yaw, `source+0x50` pitch). When the mouse is idle and within the configured radius, it applies exponential decay to gently center the aim.
 
 ## Compatibility
+
+The configuration API remains queryable for status and editing even when the
+AbsoluteHOTAS guard prevents gameplay hook installation.
 
 - **Do NOT load alongside AbsoluteHOTAS** — both hook the same writer block. The plugin detects `AbsoluteHOTAS.dll` at load time and gracefully disables itself.
 - Compatible with other SFSE plugins that don't modify the rotational writer block.

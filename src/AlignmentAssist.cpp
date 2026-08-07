@@ -1,319 +1,293 @@
 #include "AlignmentAssist.h"
+
+#include "Configuration.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
+#include "SuiteState.h"
+
 #include <windows.h>
-#include <thread>
+
+#include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <algorithm>
 #include <format>
 #include <string>
+#include <thread>
 
-// ---- Static config ----
-static AlignmentAssist::Config s_config;
+namespace {
+std::jthread g_pollThread;
 
-// ---- SEH-safe memory access (must be standalone — not lambdas, not inlined) ----
-// MSVC /EHsc forbids mixing SEH with C++ objects that have destructors.
 #pragma optimize("", off)
-static float SafeReadFloat(uintptr_t addr) {
-    __try { return *(volatile float*)(addr); }
-    __except (EXCEPTION_EXECUTE_HANDLER) { return -999.0f; }
+float SafeReadFloat(std::uintptr_t address) {
+    __try {
+        return *reinterpret_cast<volatile float*>(address);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -999.0F;
+    }
 }
 
-static void SafeWriteFloat(uintptr_t addr, float value) {
-    __try { *(volatile float*)addr = value; }
-    __except (EXCEPTION_EXECUTE_HANDLER) {}
+void SafeWriteFloat(std::uintptr_t address, float value) {
+    __try {
+        *reinterpret_cast<volatile float*>(address) = value;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
 }
 #pragma optimize("", on)
 
-// ---- Logging helper ----
-static void AssistLog(const std::string& msg) {
-    RuntimePaths::AppendLog("[AlignmentAssist]", msg);
-}
-
-// ---- Hotkey edge detection state ----
 struct HotkeyState {
-    bool prevAltPlus      = false;
-    bool prevAltMinus     = false;
-    bool prevCtrlPlus     = false;
-    bool prevCtrlMinus    = false;
-    bool prevShiftPlus    = false;
-    bool prevShiftMinus   = false;
-    bool prevToggle       = false;  // Ctrl+Alt+0
-    bool prevVJoyToggle   = false;  // Alt+Numpad0
-    bool prevSave         = false;  // Ctrl+Alt+S
+    bool altPlus{};
+    bool altMinus{};
+    bool controlPlus{};
+    bool controlMinus{};
+    bool shiftPlus{};
+    bool shiftMinus{};
+    bool toggle{};
+    bool virtualJoyToggle{};
+    bool save{};
 };
 
-static bool IsKeyDown(int vk) {
-    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+bool KeyDown(int virtualKey) {
+    return virtualKey > 0 && virtualKey < 256 &&
+           (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 }
 
-static void LogConfigChange(const char* param, const std::string& value) {
-    RuntimePaths::AppendLogAlways("[Tuning]",
-        std::format("{} = {}  [radius={:.1f} idleMs={} decayRate={:.1f} enabled={}]",
-            param, value,
-            s_config.radius, s_config.idleMs, s_config.decayRate,
-            s_config.enabled ? "true" : "false"));
+void LogChange(const char* parameter, const std::string& value,
+               const Configuration::Config& config) {
+    RuntimePaths::AppendLogAlways(
+        "[Tuning]",
+        std::format("{} = {} [radius={:.1f} idleMs={} decayRate={:.1f} enabled={}]", parameter,
+                    value, config.radius, config.idleMs, config.decayRate,
+                    config.enabled ? "true" : "false"));
 }
 
-static void ProcessHotkeys(HotkeyState& hk) {
-    bool alt   = IsKeyDown(VK_MENU);
-    bool ctrl  = IsKeyDown(VK_CONTROL);
-    bool shift = IsKeyDown(VK_SHIFT);
-    bool plus  = IsKeyDown(VK_ADD);
-    bool minus = IsKeyDown(VK_SUBTRACT);
-    bool sKey  = IsKeyDown('S');
+void ProcessHotkeys(HotkeyState& previous, Configuration::Config& config) {
+    const bool alt = KeyDown(VK_MENU);
+    const bool control = KeyDown(VK_CONTROL);
+    const bool shift = KeyDown(VK_SHIFT);
+    const bool plus = KeyDown(VK_ADD);
+    const bool minus = KeyDown(VK_SUBTRACT);
+    const bool suppressed = SuiteState::WorkbenchOpen() || SuiteState::InputCaptureActive();
+    bool changed{};
+    const char* changedParameter{};
+    std::string changedValue;
 
-    // Alt+Numpad+ / Alt+Numpad-  →  Radius ±2.0
-    bool curAltPlus = alt && !ctrl && !shift && plus;
-    if (curAltPlus && !hk.prevAltPlus) {
-        s_config.radius = std::clamp(s_config.radius + 2.0f, 1.0f, 200.0f);
-        LogConfigChange("fRadius", std::format("{:.1f}", s_config.radius));
+    const bool altPlus = alt && !control && !shift && plus;
+    if (!suppressed && altPlus && !previous.altPlus) {
+        config.radius = std::clamp(config.radius + 2.0F, 1.0F, 200.0F);
+        changed = true;
+        changedParameter = "fRadius";
+        changedValue = std::format("{:.1f}", config.radius);
     }
-    hk.prevAltPlus = curAltPlus;
+    previous.altPlus = altPlus;
 
-    bool curAltMinus = alt && !ctrl && !shift && minus;
-    if (curAltMinus && !hk.prevAltMinus) {
-        s_config.radius = std::clamp(s_config.radius - 2.0f, 1.0f, 200.0f);
-        LogConfigChange("fRadius", std::format("{:.1f}", s_config.radius));
+    const bool altMinus = alt && !control && !shift && minus;
+    if (!suppressed && altMinus && !previous.altMinus) {
+        config.radius = std::clamp(config.radius - 2.0F, 1.0F, 200.0F);
+        changed = true;
+        changedParameter = "fRadius";
+        changedValue = std::format("{:.1f}", config.radius);
     }
-    hk.prevAltMinus = curAltMinus;
+    previous.altMinus = altMinus;
 
-    // Ctrl+Numpad+ / Ctrl+Numpad-  →  Idle delay ±10ms
-    bool curCtrlPlus = ctrl && !alt && !shift && plus;
-    if (curCtrlPlus && !hk.prevCtrlPlus) {
-        s_config.idleMs = std::clamp(s_config.idleMs + 10, 10, 500);
-        LogConfigChange("iIdleMs", std::to_string(s_config.idleMs));
+    const bool controlPlus = control && !alt && !shift && plus;
+    if (!suppressed && controlPlus && !previous.controlPlus) {
+        config.idleMs = std::clamp(config.idleMs + 10, 10, 500);
+        changed = true;
+        changedParameter = "iIdleMs";
+        changedValue = std::to_string(config.idleMs);
     }
-    hk.prevCtrlPlus = curCtrlPlus;
+    previous.controlPlus = controlPlus;
 
-    bool curCtrlMinus = ctrl && !alt && !shift && minus;
-    if (curCtrlMinus && !hk.prevCtrlMinus) {
-        s_config.idleMs = std::clamp(s_config.idleMs - 10, 10, 500);
-        LogConfigChange("iIdleMs", std::to_string(s_config.idleMs));
+    const bool controlMinus = control && !alt && !shift && minus;
+    if (!suppressed && controlMinus && !previous.controlMinus) {
+        config.idleMs = std::clamp(config.idleMs - 10, 10, 500);
+        changed = true;
+        changedParameter = "iIdleMs";
+        changedValue = std::to_string(config.idleMs);
     }
-    hk.prevCtrlMinus = curCtrlMinus;
+    previous.controlMinus = controlMinus;
 
-    // Shift+Numpad+ / Shift+Numpad-  →  Decay rate ±0.5
-    bool curShiftPlus = shift && !alt && !ctrl && plus;
-    if (curShiftPlus && !hk.prevShiftPlus) {
-        s_config.decayRate = std::clamp(s_config.decayRate + 0.5f, 0.5f, 20.0f);
-        LogConfigChange("fDecayRate", std::format("{:.1f}", s_config.decayRate));
+    const bool shiftPlus = shift && !alt && !control && plus;
+    if (!suppressed && shiftPlus && !previous.shiftPlus) {
+        config.decayRate = std::clamp(config.decayRate + 0.5F, 0.5F, 20.0F);
+        changed = true;
+        changedParameter = "fDecayRate";
+        changedValue = std::format("{:.1f}", config.decayRate);
     }
-    hk.prevShiftPlus = curShiftPlus;
+    previous.shiftPlus = shiftPlus;
 
-    bool curShiftMinus = shift && !alt && !ctrl && minus;
-    if (curShiftMinus && !hk.prevShiftMinus) {
-        s_config.decayRate = std::clamp(s_config.decayRate - 0.5f, 0.5f, 20.0f);
-        LogConfigChange("fDecayRate", std::format("{:.1f}", s_config.decayRate));
+    const bool shiftMinus = shift && !alt && !control && minus;
+    if (!suppressed && shiftMinus && !previous.shiftMinus) {
+        config.decayRate = std::clamp(config.decayRate - 0.5F, 0.5F, 20.0F);
+        changed = true;
+        changedParameter = "fDecayRate";
+        changedValue = std::format("{:.1f}", config.decayRate);
     }
-    hk.prevShiftMinus = curShiftMinus;
+    previous.shiftMinus = shiftMinus;
 
-    // Ctrl+Alt+0  →  Toggle enable/disable
-    bool curToggle = ctrl && alt && !shift && IsKeyDown(0x30);
-    if (curToggle && !hk.prevToggle) {
-        s_config.enabled = !s_config.enabled;
-        if (!s_config.enabled) MouseAlignHook::SetVirtualJoy(false, 0.0f, 0.0f);
-        LogConfigChange("bEnabled", s_config.enabled ? "true" : "false");
+    const bool toggle = control && alt && !shift && KeyDown('0');
+    if (!suppressed && toggle && !previous.toggle) {
+        config.enabled = !config.enabled;
+        if (!config.enabled) {
+            MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
+        }
+        changed = true;
+        changedParameter = "bEnabled";
+        changedValue = config.enabled ? "true" : "false";
     }
-    hk.prevToggle = curToggle;
+    previous.toggle = toggle;
 
-    // Toggle Virtual Joy mode
-    bool toggleKey = IsKeyDown(s_config.vJoyToggleKey);
-    bool curVJoyToggle = toggleKey && (!s_config.vJoyToggleAlt || alt);
-    if (curVJoyToggle && !hk.prevVJoyToggle) {
-        s_config.virtualJoy = !s_config.virtualJoy;
-        if (!s_config.virtualJoy) MouseAlignHook::SetVirtualJoy(false, 0.0f, 0.0f);
-        LogConfigChange("bVirtualJoy", s_config.virtualJoy ? "true" : "false");
+    const bool virtualJoyToggle = KeyDown(config.vJoyToggleKey) &&
+                                  (!config.vJoyToggleAlt || alt);
+    if (!suppressed && virtualJoyToggle && !previous.virtualJoyToggle) {
+        config.virtualJoy = !config.virtualJoy;
+        if (!config.virtualJoy) {
+            MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
+        }
+        changed = true;
+        changedParameter = "bVirtualJoy";
+        changedValue = config.virtualJoy ? "true" : "false";
     }
-    hk.prevVJoyToggle = curVJoyToggle;
+    previous.virtualJoyToggle = virtualJoyToggle;
 
-    // Ctrl+Alt+S  →  Save current config to INI
-    bool curSave = ctrl && alt && !shift && sKey;
-    if (curSave && !hk.prevSave) {
-        AlignmentAssist::SaveConfig();
+    const bool save = control && alt && !shift && KeyDown('S');
+    if (!suppressed && save && !previous.save) {
+        const bool saved = Configuration::Save();
+        RuntimePaths::AppendLogAlways("[Tuning]", saved ? "CONFIG SAVED to AbsoluteZero.ini"
+                                                         : "CONFIG SAVE FAILED");
     }
-    hk.prevSave = curSave;
+    previous.save = save;
+
+    if (changed && Configuration::Apply(config)) {
+        LogChange(changedParameter, changedValue, config);
+        config = Configuration::Get();
+    }
 }
 
-// ---- Polling thread ----
-static void PollThread() {
-    float prevYaw   = 0.0f;
-    float prevPitch = 0.0f;
-    float vYaw      = 0.0f;
-    float vPitch    = 0.0f;
-    int   idleFrames = 0;
-    auto  lastTime = std::chrono::steady_clock::now();
-    HotkeyState hk{};
+void Poll(std::stop_token stopToken) {
+    float previousYaw{};
+    float previousPitch{};
+    float virtualYaw{};
+    float virtualPitch{};
+    int idleFrames{};
+    auto lastTime = std::chrono::steady_clock::now();
+    HotkeyState hotkeys;
+    RuntimePaths::AppendLog("[AlignmentAssist]", "Synchronized polling worker started.");
 
-    AssistLog(std::format("Polling thread started @ {}Hz", s_config.pollRateHz));
-
-    while (true) {
+    while (!stopToken.stop_requested()) {
+        auto config = Configuration::Get();
         std::this_thread::sleep_for(
-            std::chrono::microseconds(1000000 / s_config.pollRateHz));
+            std::chrono::microseconds(1'000'000 / std::max(30, config.pollRateHz)));
+        if (stopToken.stop_requested()) {
+            break;
+        }
+        ProcessHotkeys(hotkeys, config);
+        config = Configuration::Get();
 
-        // Process hotkeys every tick (edge-detected, very cheap)
-        ProcessHotkeys(hk);
-
-        if (!s_config.enabled) {
-            MouseAlignHook::SetVirtualJoy(false, 0.0f, 0.0f);
+        if (!config.enabled) {
+            MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
             continue;
         }
-
-        // Hold-to-suppress: skip decay while the suppress key is held
-        if (s_config.suppressKey > 0 && (GetAsyncKeyState(s_config.suppressKey) & 0x8000)) {
+        if (config.suppressKey > 0 && KeyDown(config.suppressKey)) {
             idleFrames = 0;
             continue;
         }
 
-        uintptr_t src = MouseAlignHook::GetSourcePtr();
-        if (!src) continue;
-
-        auto now = std::chrono::steady_clock::now();
-        float dt = std::chrono::duration<float>(now - lastTime).count();
-        dt = std::clamp(dt, 0.0001f, 0.1f);
+        const std::uintptr_t source = MouseAlignHook::GetSourcePtr();
+        if (!source) {
+            continue;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        const float deltaTime = std::clamp(
+            std::chrono::duration<float>(now - lastTime).count(), 0.0001F, 0.1F);
         lastTime = now;
 
-        if (s_config.virtualJoy) {
-            // VJoy Mode: The crosshair is locked to center.
-            // The vanilla accumulator is extracted synchronously by the hook,
-            // which writes directly to g_vYaw and g_vPitch.
-
-            // Read the currently accumulated values from the hook
-            vYaw = MouseAlignHook::GetVirtualYaw();
-            vPitch = MouseAlignHook::GetVirtualPitch();
-
-            // Detect movement based on the delta
-            constexpr float kEpsilon = 0.5f;
-            bool moved = (std::abs(vYaw - prevYaw) > kEpsilon) || (std::abs(vPitch - prevPitch) > kEpsilon);
-
-            prevYaw = vYaw;
-            prevPitch = vPitch;
-
-            if (moved) {
-                idleFrames = 0;
-            } else {
-                idleFrames++;
-            }
-
-            // Apply Alignment Assist to the virtual accumulator
-            int threshold = std::max(1, (s_config.pollRateHz * s_config.idleMs) / 1000);
+        if (config.virtualJoy) {
+            virtualYaw = MouseAlignHook::GetVirtualYaw();
+            virtualPitch = MouseAlignHook::GetVirtualPitch();
+            constexpr float epsilon = 0.5F;
+            const bool moved = std::abs(virtualYaw - previousYaw) > epsilon ||
+                               std::abs(virtualPitch - previousPitch) > epsilon;
+            previousYaw = virtualYaw;
+            previousPitch = virtualPitch;
+            idleFrames = moved ? 0 : idleFrames + 1;
+            const int threshold =
+                std::max(1, (config.pollRateHz * config.idleMs) / 1000);
             if (idleFrames >= threshold) {
-                float dist = std::sqrt(vYaw * vYaw + vPitch * vPitch);
-                if (dist > s_config.radius || dist <= 0.1f) {
-                    // Outside assist radius
-                } else {
-                    float factor = std::exp(-s_config.decayRate * dt);
-                    vYaw   *= factor;
-                    vPitch *= factor;
-
-                    if (std::abs(vYaw)   < 0.1f) vYaw   = 0.0f;
-                    if (std::abs(vPitch) < 0.1f) vPitch = 0.0f;
+                const float distance = std::hypot(virtualYaw, virtualPitch);
+                if (distance <= config.radius && distance > 0.1F) {
+                    const float factor = std::exp(-config.decayRate * deltaTime);
+                    virtualYaw *= factor;
+                    virtualPitch *= factor;
+                    if (std::abs(virtualYaw) < 0.1F) {
+                        virtualYaw = 0.0F;
+                    }
+                    if (std::abs(virtualPitch) < 0.1F) {
+                        virtualPitch = 0.0F;
+                    }
                 }
             }
-
-            // Clamp virtual accumulator to the game's max UI radius (200.0f)
-            // This allows the virtual accumulator to stay outside the auto-center radius and sustain turns.
-            constexpr float kMaxVisualRadius = 200.0f;
-            float currentDist = std::sqrt(vYaw * vYaw + vPitch * vPitch);
-            if (currentDist > kMaxVisualRadius && currentDist > 0.001f) {
-                float scale = kMaxVisualRadius / currentDist;
-                vYaw *= scale;
-                vPitch *= scale;
+            constexpr float maximumRadius = 200.0F;
+            const float distance = std::hypot(virtualYaw, virtualPitch);
+            if (distance > maximumRadius) {
+                const float scale = maximumRadius / distance;
+                virtualYaw *= scale;
+                virtualPitch *= scale;
             }
-
-            // Write the decayed value back to the global variables
-            MouseAlignHook::SetVirtualJoy(true, vYaw, vPitch);
-
-        } else {
-            // Vanilla Mode
-            MouseAlignHook::SetVirtualJoy(false, 0.0f, 0.0f);
-            
-            float curYaw   = SafeReadFloat(src + 0x4C);
-            float curPitch = SafeReadFloat(src + 0x50);
-
-            // Detect mouse movement
-            constexpr float kEpsilon = 0.5f;
-            bool moved = (std::abs(curYaw - prevYaw) > kEpsilon)
-                      || (std::abs(curPitch - prevPitch) > kEpsilon);
-
-            prevYaw   = curYaw;
-            prevPitch = curPitch;
-
-            if (moved) { idleFrames = 0; continue; }
-            idleFrames++;
-
-            // Wait for idle threshold
-            int threshold = std::max(1, (s_config.pollRateHz * s_config.idleMs) / 1000);
-            if (idleFrames < threshold) continue;
-
-            // Check if within alignment radius
-            float dist = std::sqrt(curYaw * curYaw + curPitch * curPitch);
-            if (dist > s_config.radius || dist <= 0.1f) continue;
-
-            // Exponential decay toward center
-            float factor = std::exp(-s_config.decayRate * dt);
-            float newYaw   = curYaw   * factor;
-            float newPitch = curPitch * factor;
-
-            // Snap to zero when close enough
-            if (std::abs(newYaw)   < 0.1f) newYaw   = 0.0f;
-            if (std::abs(newPitch) < 0.1f) newPitch = 0.0f;
-
-            SafeWriteFloat(src + 0x4C, newYaw);
-            SafeWriteFloat(src + 0x50, newPitch);
-
-            prevYaw   = newYaw;
-            prevPitch = newPitch;
+            MouseAlignHook::SetVirtualJoy(true, virtualYaw, virtualPitch);
+            continue;
         }
+
+        MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
+        const float currentYaw = SafeReadFloat(source + 0x4C);
+        const float currentPitch = SafeReadFloat(source + 0x50);
+        constexpr float epsilon = 0.5F;
+        const bool moved = std::abs(currentYaw - previousYaw) > epsilon ||
+                           std::abs(currentPitch - previousPitch) > epsilon;
+        previousYaw = currentYaw;
+        previousPitch = currentPitch;
+        if (moved) {
+            idleFrames = 0;
+            continue;
+        }
+        ++idleFrames;
+        const int threshold = std::max(1, (config.pollRateHz * config.idleMs) / 1000);
+        if (idleFrames < threshold) {
+            continue;
+        }
+        const float distance = std::hypot(currentYaw, currentPitch);
+        if (distance > config.radius || distance <= 0.1F) {
+            continue;
+        }
+        const float factor = std::exp(-config.decayRate * deltaTime);
+        float nextYaw = currentYaw * factor;
+        float nextPitch = currentPitch * factor;
+        if (std::abs(nextYaw) < 0.1F) {
+            nextYaw = 0.0F;
+        }
+        if (std::abs(nextPitch) < 0.1F) {
+            nextPitch = 0.0F;
+        }
+        SafeWriteFloat(source + 0x4C, nextYaw);
+        SafeWriteFloat(source + 0x50, nextPitch);
+        previousYaw = nextYaw;
+        previousPitch = nextPitch;
+    }
+    MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
+}
+} // namespace
+
+namespace AlignmentAssist {
+void Start() {
+    if (!g_pollThread.joinable()) {
+        g_pollThread = std::jthread(Poll);
     }
 }
 
-// ---- Public API ----
-
-void AlignmentAssist::Initialize(const Config& config) {
-    s_config = config;
-    AssistLog(std::format("Config: enabled={} vJoy={} radius={:.1f} idleMs={} decayRate={:.1f} pollHz={} suppressKey=0x{:02X}",
-        config.enabled, config.virtualJoy, config.radius, config.idleMs, config.decayRate, config.pollRateHz, config.suppressKey));
+void Stop() {
+    if (g_pollThread.joinable()) {
+        g_pollThread.request_stop();
+        g_pollThread.join();
+    }
 }
-
-void AlignmentAssist::Start() {
-    std::thread(PollThread).detach();
-    AssistLog("Polling thread spawned.");
-}
-
-void AlignmentAssist::SaveConfig() {
-    auto ini = RuntimePaths::IniPath().string();
-    const char* path = ini.c_str();
-
-    auto writeStr = [&](const char* key, const char* val, const char* section = "MouseAlign") {
-        WritePrivateProfileStringA(section, key, val, path);
-    };
-    auto writeFloat = [&](const char* key, float val, const char* section = "MouseAlign") {
-        writeStr(key, std::to_string(val).c_str(), section);
-    };
-    auto writeInt = [&](const char* key, int val, const char* section = "MouseAlign") {
-        writeStr(key, std::to_string(val).c_str(), section);
-    };
-    auto writeHex = [&](const char* key, int val, const char* section = "MouseAlign") {
-        char buf[32]{};
-        snprintf(buf, sizeof(buf), "0x%02X", val);
-        writeStr(key, buf, section);
-    };
-
-    writeStr("bEnabled",    s_config.enabled ? "true" : "false");
-    writeFloat("fRadius",   s_config.radius);
-    writeInt("iIdleMs",     s_config.idleMs);
-    writeFloat("fDecayRate",s_config.decayRate);
-    writeInt("iPollRateHz", s_config.pollRateHz);
-    writeHex("iSuppressKey",s_config.suppressKey);
-
-    writeStr("bVirtualJoy", s_config.virtualJoy ? "true" : "false", "VirtualJoy");
-    writeHex("iVJoyToggleKey", s_config.vJoyToggleKey, "VirtualJoy");
-    writeStr("bVJoyToggleAlt", s_config.vJoyToggleAlt ? "true" : "false", "VirtualJoy");
-
-    RuntimePaths::AppendLogAlways("[Tuning]",
-        std::format("CONFIG SAVED to {} — radius={:.1f} idleMs={} decayRate={:.1f} enabled={} vJoy={}",
-            ini, s_config.radius, s_config.idleMs, s_config.decayRate,
-            s_config.enabled ? "true" : "false", s_config.virtualJoy ? "true" : "false"));
-}
+} // namespace AlignmentAssist

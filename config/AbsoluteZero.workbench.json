@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "moduleId": "absolute.zero",
+  "displayName": "AbsoluteZero Ship Control",
+  "backendDll": "AbsoluteZero.dll",
+  "queryExport": "AbsoluteZero_QueryApi",
+  "backendApiVersion": 1,
+  "requiredHost": {
+    "moduleId": "absolute.workbench",
+    "minimumApiVersion": 1,
+    "required": false
+  },
+  "pages": [
+    {
+      "id": "zero-alignment",
+      "title": "Mouse Alignment",
+      "category": "Flight Assist",
+      "order": 100
+    },
+    {
+      "id": "zero-virtual-joystick",
+      "title": "Locked Reticule",
+      "category": "Flight Assist",
+      "order": 110
+    },
+    {
+      "id": "zero-diagnostics",
+      "title": "AbsoluteZero Diagnostics",
+      "category": "Diagnostics",
+      "order": 820
+    }
+  ]
+}
