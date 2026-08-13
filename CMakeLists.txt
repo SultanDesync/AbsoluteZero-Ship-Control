@@ -47,6 +47,8 @@ set(absolute_zero_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteState.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/WorkbenchHost.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/WorkbenchHost.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/SlopSubscriber.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/SlopSubscriber.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/AbsoluteWorkbenchAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteZeroAPI.h
   ${CMAKE_CURRENT_BINARY_DIR}/version.rc
@@ -90,7 +92,10 @@ endif()
 target_include_directories(AbsoluteZero SYSTEM PRIVATE
   $<TARGET_PROPERTY:CommonLibSF::CommonLibSF,INTERFACE_INCLUDE_DIRECTORIES>
 )
-target_link_libraries(AbsoluteZero PRIVATE CommonLibSF::CommonLibSF spdlog::spdlog)
+# CommonLibSF headers define the SFSE ABI used by this plugin, but linking its
+# runtime library pulls REL::IDDatabase into the DLL and creates an unintended
+# Address Library requirement. AbsoluteZero uses the raw SFSE interfaces below.
+target_link_libraries(AbsoluteZero PRIVATE spdlog::spdlog)
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
   set(BUILD_NAME Debug)
@@ -127,6 +132,15 @@ if(BUILD_TESTING)
   target_compile_features(suite_api_layout_test PRIVATE cxx_std_23)
   target_include_directories(suite_api_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   add_test(NAME suite_api_layout COMMAND suite_api_layout_test)
+
+  add_executable(slop_subscriber_test tests/slop_subscriber_test.cpp src/SlopSubscriber.cpp)
+  target_compile_features(slop_subscriber_test PRIVATE cxx_std_23)
+  target_include_directories(slop_subscriber_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  add_test(NAME slop_subscriber COMMAND slop_subscriber_test)
+
 endif()
 
 add_custom_command(

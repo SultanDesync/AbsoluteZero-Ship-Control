@@ -13,9 +13,10 @@ namespace RuntimePaths {
     // Call once at startup to read bLogEnabled from INI and set the global flag.
     void EnableFileLogging();
 
-    // Gated by bLogEnabled — use for all runtime/per-frame messages.
+    // Gated by bLogEnabled. When disabled, no file is opened or created.
     void AppendLog(const char* a_prefix, const std::string& a_message);
 
-    // Always writes regardless of bLogEnabled — use for startup/init only.
+    // Deprecated alias for AppendLog. Kept for call-site compatibility; it is
+    // now also gated by bLogEnabled (no longer "always"). Prefer AppendLog.
     void AppendLogAlways(const char* a_prefix, const std::string& a_message);
 }

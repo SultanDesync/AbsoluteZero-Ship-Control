@@ -8,8 +8,21 @@ Mechanically inspired by [Xilandro](https://www.nexusmods.com/starfield/users/44
 
 ---
 
-The gameplay DLL remains independent. Absolute Workbench is an optional shared
-frontend for the same daughter-owned INI and live configuration.
+The gameplay DLL remains independent. Absolute Control Panel and Absolute Workbench are optional
+shared frontends for the same daughter-owned INI and live configuration.
+
+## Absolute Control Panel integration (experimental)
+
+The experimental subscriber branch registers a **Mouse Alignment** page containing the existing
+enable switch, radius, idle delay, decay rate, poll rate, suppression key, and diagnostic logging
+settings. The host renders those descriptors but AbsoluteZero continues to own validation, live
+preview, persistence, and Cancel rollback.
+
+The adapter dynamically discovers a loaded host and currently uses the host's preserved ABI-v1
+research export. There is no import-library or load-time dependency. A missing or incompatible
+Control Panel is a normal state: AbsoluteZero continues with Absolute Workbench, direct INI
+editing, and its existing runtime hotkeys. This branch intentionally preserves those legacy paths
+until the Control Panel SDK and product ABI are ready to freeze.
 
 ## Absolute suite
 
@@ -47,7 +60,8 @@ Edit `Data\SFSE\Plugins\AbsoluteZero.ini`:
 
 ## Configuration UI and live tuning
 
-Install Absolute Workbench beside AbsoluteZero to get pages for Mouse Alignment,
+Install Absolute Control Panel to expose the experimental native Mouse Alignment page. Install
+Absolute Workbench to retain its existing pages for Mouse Alignment,
 Locked Reticule, and diagnostics. Workbench discovers
 `AbsoluteZero.workbench.json`, queries the size-versioned
 `AbsoluteZero_QueryApi(1)` POD interface, and asks this DLL to apply, save,
@@ -64,10 +78,11 @@ Adjust settings on the fly without leaving the cockpit:
 | `Alt + Numpad+` / `Numpad-` | Radius ↑/↓ | ±2.0 |
 | `Ctrl + Numpad+` / `Numpad-` | Idle delay ↑/↓ | ±10 ms |
 | `Shift + Numpad+` / `Numpad-` | Decay rate ↑/↓ | ±0.5 |
-| `Ctrl + Alt + Numpad0` | Toggle enable/disable | — |
+| `Ctrl + Alt + 0` | Toggle enable/disable | — |
 | `Ctrl + Alt + S` | Save current settings to INI | — |
 
-All changes are logged to `AbsoluteZero.log` (always, regardless of `bLogEnabled`). Use `Ctrl+Alt+S` to persist your tuned values so they survive a restart.
+When `bLogEnabled=true`, changes are logged to `AbsoluteZero.log`. Use `Ctrl+Alt+S` to
+persist your tuned values so they survive a restart.
 
 While Workbench is open or capturing a key, AbsoluteZero updates hotkey edge
 state without executing daughter actions. Closing the host therefore cannot

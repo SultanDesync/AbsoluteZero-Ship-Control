@@ -67,8 +67,12 @@ namespace RuntimePaths {
         g_fileLoggingEnabled = (normalized == L"1" || normalized == L"true" || normalized == L"yes" || normalized == L"on");
     }
 
-    void AppendLogAlways(const char* a_prefix, const std::string& a_message)
+    void AppendLog(const char* a_prefix, const std::string& a_message)
     {
+        // Single gate for all file output. When bLogEnabled is false we never
+        // open the stream, so AbsoluteZero.log is never created — dead silent.
+        if (!g_fileLoggingEnabled) return;
+
         std::ofstream log(LogPath(), std::ios::app);
         if (log.is_open()) {
             log << a_prefix << ' ' << a_message << '\n';
@@ -76,9 +80,11 @@ namespace RuntimePaths {
         }
     }
 
-    void AppendLog(const char* a_prefix, const std::string& a_message)
+    void AppendLogAlways(const char* a_prefix, const std::string& a_message)
     {
-        if (!g_fileLoggingEnabled) return;
-        AppendLogAlways(a_prefix, a_message);
+        // Retained for call-site compatibility. Formerly unconditional; now
+        // routed through the same gate so startup/crash/diagnostic lines also
+        // stay silent (and create no file) when logging is disabled.
+        AppendLog(a_prefix, a_message);
     }
 }

@@ -2,6 +2,7 @@
 #include "Configuration.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
+#include "SlopSubscriber.h"
 #include "SuiteState.h"
 #include "WorkbenchHost.h"
 
@@ -50,8 +51,13 @@ void InitializeRuntime() {
         return;
     }
     const auto selection = WorkbenchHost::Select();
+    const auto slopResult = SlopSubscriber::RegisterDiscoveredHost();
+    if (slopResult != SlopApi::Result::Ok && slopResult != SlopApi::Result::Duplicate) {
+        RuntimePaths::AppendLog(
+            "[SLOP]",
+            "Optional settings host unavailable or rejected registration; continuing normally.");
+    }
     SuiteState::SetHostActive(selection == WorkbenchHost::Selection::Active);
-
     const bool inactiveByHOTAS = AbsoluteHOTASPresent();
     SuiteState::SetInactiveByHOTAS(inactiveByHOTAS);
     if (inactiveByHOTAS) {
@@ -79,6 +85,22 @@ void OnSfseMessage(SFSE::MessagingInterface::Message* message) {
         InitializeRuntime();
     }
 }
+
+bool RegisterSfseListener(const SFSE::LoadInterface* sfse) noexcept {
+    if (!sfse) {
+        return false;
+    }
+    const auto* load = reinterpret_cast<const SFSE::detail::SFSEInterface*>(sfse);
+    if (!load->QueryInterface || !load->GetPluginHandle) {
+        return false;
+    }
+    const auto* messaging = static_cast<const SFSE::detail::SFSEMessagingInterface*>(
+        load->QueryInterface(SFSE::LoadInterface::kMessaging));
+    return messaging && messaging->interfaceVersion >= SFSE::MessagingInterface::kVersion &&
+           messaging->RegisterListener &&
+           messaging->RegisterListener(load->GetPluginHandle(), "SFSE",
+                                       reinterpret_cast<void*>(&OnSfseMessage));
+}
 } // namespace
 
 SFSEPluginLoad(const SFSE::LoadInterface* sfse) {
@@ -92,10 +114,7 @@ SFSEPluginLoad(const SFSE::LoadInterface* sfse) {
             "[Main]", "SFSE load interface is null; runtime hook installation is suppressed.");
         return true;
     }
-    SFSE::Init(sfse, false);
-    const auto* messaging = SFSE::GetMessagingInterface();
-    if (!messaging || messaging->Version() < SFSE::MessagingInterface::kVersion ||
-        !messaging->RegisterListener(&OnSfseMessage)) {
+    if (!RegisterSfseListener(sfse)) {
         RuntimePaths::AppendLogAlways(
             "[Main]",
             "Could not subscribe to SFSE post-post-load messaging; hook installation is "
