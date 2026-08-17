@@ -4,7 +4,10 @@ A lightweight SFSE plugin that gently centers your ship's mouse aim when idle du
 
 Mechanically inspired by [Xilandro](https://www.nexusmods.com/starfield/users/4477498)'s **Flight Controls Autoalign** (out of support since 2024). Logic was independently developed.
 
-> **Note**: This is a standalone sister project to [AbsoluteHOTAS](https://www.nexusmods.com/starfield/mods/210). If you already use AbsoluteHOTAS, you don't need this — enable `bAlignmentAssist = true` in AbsoluteHOTAS.ini instead.
+> **Current compatibility**: This is the standalone owner of idle mouse centering for the modular
+> Absolute suite. With the paired compatibility build of AbsoluteHOTAS installed, AbsoluteZero
+> declares native mouse steering ownership: HOTAS releases pitch/yaw and its legacy alignment path,
+> retains roll/strafe, and supplies bounded accumulator operations through one shared hook owner.
 
 ---
 
@@ -13,23 +16,26 @@ shared frontends for the same daughter-owned INI and live configuration.
 
 ## Absolute Control Panel integration (experimental)
 
-The experimental subscriber branch registers a **Mouse Alignment** page containing the existing
-enable switch, radius, idle delay, decay rate, poll rate, suppression key, and diagnostic logging
-settings. The host renders those descriptors but AbsoluteZero continues to own validation, live
-preview, persistence, and Cancel rollback.
+The current subscriber registers one **Mouse Alignment** page through the product ABI. It exposes
+the existing enable switch, activation radius, idle delay, centering rate, suppression binding,
+polling rate, and diagnostic logging settings. The suppression key uses the host's keyboard-capture
+workflow instead of exposing a numeric virtual-key code. AbsoluteZero continues to own validation,
+live preview, atomic INI persistence, and Cancel rollback.
 
-The adapter dynamically discovers a loaded host and currently uses the host's preserved ABI-v1
-research export. There is no import-library or load-time dependency. A missing or incompatible
-Control Panel is a normal state: AbsoluteZero continues with Absolute Workbench, direct INI
-editing, and its existing runtime hotkeys. This branch intentionally preserves those legacy paths
-until the Control Panel SDK and product ABI are ready to freeze.
+The adapter discovers the canonical Control Panel, the current ResearchDev host, or the earlier
+research artifact at SFSE data-load, with one bounded post-post-data-load retry for host readiness.
+There is no import-library or load-time dependency. A missing or incompatible Control Panel is a
+normal state: AbsoluteZero falls back to Absolute Workbench, direct INI editing, and its runtime
+hotkeys. Control Panel open/capture state suppresses those local tuning hotkeys so two frontends
+cannot edit concurrently.
 
 ## Absolute suite
 
 - [Absolute Workbench](https://github.com/SultanDesync/Absolute-Workbench) — optional
   shared configuration UI for this plugin and the other daughter mods.
 - [AbsoluteHOTAS](https://github.com/SultanDesync/AbsoluteHOTAS) — complete HOTAS/HOSAS
-  flight-control stack; it already contains alignment assistance, so do not load both.
+  flight-control stack. In paired compatibility mode, installing AbsoluteZero selects mouse
+  pitch/yaw steering while HOTAS retains the remaining flight-control lanes.
 - [Absolute Head Tracking](https://github.com/SultanDesync/Absolute-Head-Tracking) —
   standalone OpenTrack cockpit camera control compatible with AbsoluteZero.
 - **Absolute Power** — priority-based ship-power presets and automation; its public
@@ -92,19 +98,24 @@ replay a chord that was pressed in the UI.
 
 Runtime installation is deferred until SFSE reports that every plugin is loaded.
 AbsoluteZero then checks both the installed file and loaded module for
-AbsoluteHOTAS before touching the shared writer path. Its stoppable worker reads
+AbsoluteHOTAS before touching the shared writer path. A compatible HOTAS exposes
+bounded accumulator reads/writes and keeps ownership of the single machine-code
+hook; no raw game pointer crosses the DLL boundary. Its stoppable worker reads
 mutex-protected configuration snapshots; UI and hotkey changes never race the
 polling loop.
 
-1. **Hook**: At startup, the plugin AOB-scans for Starfield's rotational writer block and installs a trampoline hook to capture the source object pointer.
+1. **Capture**: Standalone, the plugin installs its own rotational-writer capture. Beside compatible AbsoluteHOTAS, it uses HOTAS's bounded accumulator seam and installs no competing trampoline.
 2. **Alignment Assist**: A polling thread observes the captured mouse accumulator (`source+0x4C` yaw, `source+0x50` pitch). When the mouse is idle and within the configured radius, it applies exponential decay to gently center the aim.
 
 ## Compatibility
 
-The configuration API remains queryable for status and editing even when the
-AbsoluteHOTAS guard prevents gameplay hook installation.
-
-- **Do NOT load alongside AbsoluteHOTAS** — both hook the same writer block. The plugin detects `AbsoluteHOTAS.dll` at load time and gracefully disables itself.
+- **Paired AbsoluteHOTAS compatibility mode** — the presence of AbsoluteZero selects native mouse
+  pitch/yaw steering. HOTAS ignores its pitch/yaw bindings, source-aim writer, and embedded alignment
+  assist while retaining roll, strafe, throttle, buttons, and profiles. AbsoluteZero installs no
+  second writer hook and owns idle centering. The legacy VirtualJoy mode is unavailable in this
+  pairing; native mouse auto-centering remains supported.
+- **Older or incompatible AbsoluteHOTAS builds** — AbsoluteZero remains queryable for configuration
+  but fails closed instead of risking overlapping writer trampolines.
 - Compatible with other SFSE plugins that don't modify the rotational writer block.
 
 ## Building

@@ -37,6 +37,8 @@ set(absolute_zero_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/MouseAlignHook.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/MouseAlignHook.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/HotasMouseCompatibility.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/HotasMouseCompatibility.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/AlignmentAssist.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/AlignmentAssist.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/Configuration.cpp
@@ -47,10 +49,15 @@ set(absolute_zero_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteState.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/WorkbenchHost.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/WorkbenchHost.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/SlopSubscriber.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/SlopSubscriber.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelSubscriber.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelSubscriber.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelDiscovery.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/AbsoluteWorkbenchAPI.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteControlPanelAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteZeroAPI.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteMouseSteeringAPI.h
   ${CMAKE_CURRENT_BINARY_DIR}/version.rc
   ${shared_sources}
 )
@@ -133,13 +140,18 @@ if(BUILD_TESTING)
   target_include_directories(suite_api_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   add_test(NAME suite_api_layout COMMAND suite_api_layout_test)
 
-  add_executable(slop_subscriber_test tests/slop_subscriber_test.cpp src/SlopSubscriber.cpp)
-  target_compile_features(slop_subscriber_test PRIVATE cxx_std_23)
-  target_include_directories(slop_subscriber_test PRIVATE
+  add_executable(control_panel_subscriber_test
+    tests/control_panel_subscriber_test.cpp
+    src/ControlPanelSubscriber.cpp
+    src/SuppressBindingCodec.cpp
+  )
+  target_compile_features(control_panel_subscriber_test PRIVATE cxx_std_23)
+  target_compile_definitions(control_panel_subscriber_test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_include_directories(control_panel_subscriber_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
   )
-  add_test(NAME slop_subscriber COMMAND slop_subscriber_test)
+  add_test(NAME control_panel_subscriber COMMAND control_panel_subscriber_test)
 
 endif()
 

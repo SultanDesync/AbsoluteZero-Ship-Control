@@ -9,6 +9,8 @@
 // ---- Global pointer storage (accessed by shellcode via absolute address) ----
 static volatile uintptr_t g_sourcePtr = 0;          // R13 — source object containing mouse accumulator
 static volatile uintptr_t g_writerClusterPtr = 0;   // RAX — writer cluster base ([R13+0x1E8])
+static MouseAlignHook::AccumulatorReader g_externalAccumulatorReader{};
+static MouseAlignHook::AccumulatorWriter g_externalAccumulatorWriter{};
 
 // ---- Virtual Joy State ----
 volatile uint8_t g_vJoyEnabled = 0;
@@ -334,6 +336,59 @@ uintptr_t MouseAlignHook::GetSourcePtr() {
     return (uintptr_t)g_sourcePtr;
 }
 
+void MouseAlignHook::SetExternalAccumulatorProvider(
+    AccumulatorReader reader, AccumulatorWriter writer) {
+    g_externalAccumulatorReader = reader;
+    g_externalAccumulatorWriter = writer;
+}
+
+bool MouseAlignHook::UsesExternalAccumulatorProvider() {
+    return g_externalAccumulatorReader && g_externalAccumulatorWriter;
+}
+
+bool MouseAlignHook::SupportsVirtualJoy() {
+    return !UsesExternalAccumulatorProvider();
+}
+
+bool MouseAlignHook::SourceAvailable() {
+    if (UsesExternalAccumulatorProvider()) {
+        float yaw{};
+        float pitch{};
+        return g_externalAccumulatorReader(&yaw, &pitch);
+    }
+    return GetSourcePtr() != 0;
+}
+
+bool MouseAlignHook::ReadAccumulator(float& yaw, float& pitch) {
+    if (UsesExternalAccumulatorProvider()) {
+        return g_externalAccumulatorReader(&yaw, &pitch);
+    }
+    const uintptr_t source = GetSourcePtr();
+    if (!source) return false;
+    __try {
+        yaw = *reinterpret_cast<volatile float*>(source + 0x4C);
+        pitch = *reinterpret_cast<volatile float*>(source + 0x50);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+bool MouseAlignHook::WriteAccumulator(float yaw, float pitch) {
+    if (UsesExternalAccumulatorProvider()) {
+        return g_externalAccumulatorWriter(yaw, pitch);
+    }
+    const uintptr_t source = GetSourcePtr();
+    if (!source) return false;
+    __try {
+        *reinterpret_cast<volatile float*>(source + 0x4C) = yaw;
+        *reinterpret_cast<volatile float*>(source + 0x50) = pitch;
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 uintptr_t MouseAlignHook::GetWriterClusterPtr() {
     return (uintptr_t)g_writerClusterPtr;
 }
@@ -355,4 +410,3 @@ float MouseAlignHook::GetVirtualYaw() {
 float MouseAlignHook::GetVirtualPitch() {
     return g_vPitch;
 }
-

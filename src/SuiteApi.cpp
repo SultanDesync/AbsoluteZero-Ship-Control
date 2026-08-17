@@ -47,8 +47,8 @@ Result __cdecl GetStatus(StatusV1* output) noexcept {
         const auto config = Configuration::Get();
         output->hookInstalled = SuiteState::HookInstalled() ? 1 : 0;
         output->runtimeActive =
-            SuiteState::HookInstalled() && !SuiteState::InactiveByHOTAS() && config.enabled ? 1 : 0;
-        output->sourceAvailable = MouseAlignHook::GetSourcePtr() ? 1 : 0;
+            SuiteState::RuntimeReady() && !SuiteState::InactiveByHOTAS() && config.enabled ? 1 : 0;
+        output->sourceAvailable = MouseAlignHook::SourceAvailable() ? 1 : 0;
         output->configurationDirty = Configuration::Dirty() ? 1 : 0;
         output->inactiveByHOTAS = SuiteState::InactiveByHOTAS() ? 1 : 0;
         output->hosted = SuiteState::HostActive() ? 1 : 0;

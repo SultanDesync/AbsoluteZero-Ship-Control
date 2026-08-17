@@ -1,8 +1,10 @@
 #include "AlignmentAssist.h"
 #include "Configuration.h"
+#include "ControlPanelDiscovery.h"
+#include "ControlPanelSubscriber.h"
+#include "HotasMouseCompatibility.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
-#include "SlopSubscriber.h"
 #include "SuiteState.h"
 #include "WorkbenchHost.h"
 
@@ -15,6 +17,7 @@
 
 namespace {
 std::atomic<bool> g_runtimeInitialized{};
+std::atomic<bool> g_frontendSelected{};
 
 LONG NTAPI CrashLogHandler(EXCEPTION_POINTERS* exceptionInfo) {
     if (!exceptionInfo || !exceptionInfo->ExceptionRecord || !exceptionInfo->ContextRecord) {
@@ -50,26 +53,46 @@ void InitializeRuntime() {
     if (g_runtimeInitialized.exchange(true)) {
         return;
     }
-    const auto selection = WorkbenchHost::Select();
-    const auto slopResult = SlopSubscriber::RegisterDiscoveredHost();
-    if (slopResult != SlopApi::Result::Ok && slopResult != SlopApi::Result::Duplicate) {
-        RuntimePaths::AppendLog(
-            "[SLOP]",
-            "Optional settings host unavailable or rejected registration; continuing normally.");
-    }
-    SuiteState::SetHostActive(selection == WorkbenchHost::Selection::Active);
-    const bool inactiveByHOTAS = AbsoluteHOTASPresent();
-    SuiteState::SetInactiveByHOTAS(inactiveByHOTAS);
-    if (inactiveByHOTAS) {
+    const bool hotasPresent = AbsoluteHOTASPresent();
+    if (hotasPresent) {
+        const auto connection = HotasMouseCompatibility::Connect();
+        if (connection == HotasMouseCompatibility::Connection::Connected) {
+            MouseAlignHook::SetExternalAccumulatorProvider(
+                &HotasMouseCompatibility::ReadMouseAccumulator,
+                &HotasMouseCompatibility::WriteMouseAccumulator);
+            SuiteState::SetInactiveByHOTAS(false);
+            SuiteState::SetHookInstalled(false);
+            SuiteState::SetRuntimeReady(true);
+            if (Configuration::Get().virtualJoy) {
+                RuntimePaths::AppendLogAlways(
+                    "[Compatibility]",
+                    "Legacy VirtualJoy is unavailable while sharing the HOTAS writer; native "
+                    "mouse auto-centering remains active.");
+            }
+            AlignmentAssist::Start();
+            RuntimePaths::AppendLogAlways(
+                "[Compatibility]",
+                "AbsoluteHOTAS accepted AbsoluteZero pitch/yaw ownership. Using HOTAS's shared "
+                "accumulator seam without installing a second writer hook.");
+            return;
+        }
+
+        SuiteState::SetInactiveByHOTAS(true);
+        SuiteState::SetRuntimeReady(false);
         RuntimePaths::AppendLogAlways(
             "[Compatibility]",
-            "AbsoluteHOTAS.dll detected by loaded module or installed file. AbsoluteZero remains "
-            "queryable for diagnostics but installs no writer hook.");
+            std::format(
+                "AbsoluteHOTAS was detected but did not provide the compatible shared mouse "
+                "capture contract (connection {}). AbsoluteZero remains fail-closed.",
+                static_cast<int>(connection)));
         return;
     }
 
+    SuiteState::SetInactiveByHOTAS(false);
+
     const bool hookInstalled = MouseAlignHook::Install();
     SuiteState::SetHookInstalled(hookInstalled);
+    SuiteState::SetRuntimeReady(hookInstalled);
     if (!hookInstalled) {
         RuntimePaths::AppendLogAlways(
             "[Main]",
@@ -80,9 +103,51 @@ void InitializeRuntime() {
     RuntimePaths::AppendLog("[Main]", "Alignment worker started after post-post-load selection.");
 }
 
+void SelectFallbackFrontend() {
+    if (g_frontendSelected.exchange(true)) return;
+    const auto selection = WorkbenchHost::Select();
+    SuiteState::SetHostActive(selection == WorkbenchHost::Selection::Active);
+}
+
+void SelectFrontend(bool finalAttempt) {
+    if (g_frontendSelected.load()) return;
+    const auto result = ControlPanelSubscriber::RegisterDiscoveredHost();
+    using ControlPanelSubscriber::Discovery::RegistrationDecision;
+    const auto decision = ControlPanelSubscriber::Discovery::DecideRegistration(
+        result, finalAttempt);
+    if (decision == RegistrationDecision::UseControlPanel) {
+        g_frontendSelected.store(true);
+        SuiteState::SetHostActive(true);
+        RuntimePaths::AppendLogAlways(
+            "[ControlPanel]",
+            "Registered the current Mouse Alignment page with Absolute Control Panel.");
+        return;
+    }
+    if (decision == RegistrationDecision::RetryAtPostPostDataLoad) {
+        RuntimePaths::AppendLogAlways(
+            "[ControlPanel]",
+            "Absolute Control Panel is not ready; registration will retry at "
+            "post-post-data-load.");
+        return;
+    }
+    RuntimePaths::AppendLogAlways(
+        "[ControlPanel]",
+        result == AbsoluteControlPanelApi::Result::NotFound
+            ? "Absolute Control Panel is not installed; selecting the legacy Workbench fallback."
+            : std::format(
+                  "Absolute Control Panel registration was unavailable (result {}); selecting "
+                  "the legacy Workbench fallback.",
+                  static_cast<std::uint32_t>(result)));
+    SelectFallbackFrontend();
+}
+
 void OnSfseMessage(SFSE::MessagingInterface::Message* message) {
-    if (message && message->type == SFSE::MessagingInterface::kPostPostLoad) {
+    if (!message) return;
+    if (message->type == SFSE::MessagingInterface::kPostPostLoad) {
         InitializeRuntime();
+    } else if (message->type == SFSE::MessagingInterface::kPostDataLoad ||
+               message->type == SFSE::MessagingInterface::kPostPostDataLoad) {
+        SelectFrontend(message->type == SFSE::MessagingInterface::kPostPostDataLoad);
     }
 }
 

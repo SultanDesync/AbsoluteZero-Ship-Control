@@ -1,6 +1,7 @@
 #include "AlignmentAssist.h"
 
 #include "Configuration.h"
+#include "ControlPanelSubscriber.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
 #include "SuiteState.h"
@@ -16,23 +17,6 @@
 
 namespace {
 std::jthread g_pollThread;
-
-#pragma optimize("", off)
-float SafeReadFloat(std::uintptr_t address) {
-    __try {
-        return *reinterpret_cast<volatile float*>(address);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return -999.0F;
-    }
-}
-
-void SafeWriteFloat(std::uintptr_t address, float value) {
-    __try {
-        *reinterpret_cast<volatile float*>(address) = value;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-    }
-}
-#pragma optimize("", on)
 
 struct HotkeyState {
     bool altPlus{};
@@ -66,7 +50,10 @@ void ProcessHotkeys(HotkeyState& previous, Configuration::Config& config) {
     const bool shift = KeyDown(VK_SHIFT);
     const bool plus = KeyDown(VK_ADD);
     const bool minus = KeyDown(VK_SUBTRACT);
-    const bool suppressed = SuiteState::WorkbenchOpen() || SuiteState::InputCaptureActive();
+    const bool suppressed = ControlPanelSubscriber::IsMenuOpen() ||
+                            ControlPanelSubscriber::IsInputCaptureActive() ||
+                            SuiteState::WorkbenchOpen() ||
+                            SuiteState::InputCaptureActive();
     bool changed{};
     const char* changedParameter{};
     std::string changedValue;
@@ -193,8 +180,9 @@ void Poll(std::stop_token stopToken) {
             continue;
         }
 
-        const std::uintptr_t source = MouseAlignHook::GetSourcePtr();
-        if (!source) {
+        float currentYaw{};
+        float currentPitch{};
+        if (!MouseAlignHook::ReadAccumulator(currentYaw, currentPitch)) {
             continue;
         }
         const auto now = std::chrono::steady_clock::now();
@@ -202,7 +190,7 @@ void Poll(std::stop_token stopToken) {
             std::chrono::duration<float>(now - lastTime).count(), 0.0001F, 0.1F);
         lastTime = now;
 
-        if (config.virtualJoy) {
+        if (config.virtualJoy && MouseAlignHook::SupportsVirtualJoy()) {
             virtualYaw = MouseAlignHook::GetVirtualYaw();
             virtualPitch = MouseAlignHook::GetVirtualPitch();
             constexpr float epsilon = 0.5F;
@@ -239,8 +227,6 @@ void Poll(std::stop_token stopToken) {
         }
 
         MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
-        const float currentYaw = SafeReadFloat(source + 0x4C);
-        const float currentPitch = SafeReadFloat(source + 0x50);
         constexpr float epsilon = 0.5F;
         const bool moved = std::abs(currentYaw - previousYaw) > epsilon ||
                            std::abs(currentPitch - previousPitch) > epsilon;
@@ -268,8 +254,7 @@ void Poll(std::stop_token stopToken) {
         if (std::abs(nextPitch) < 0.1F) {
             nextPitch = 0.0F;
         }
-        SafeWriteFloat(source + 0x4C, nextYaw);
-        SafeWriteFloat(source + 0x50, nextPitch);
+        MouseAlignHook::WriteAccumulator(nextYaw, nextPitch);
         previousYaw = nextYaw;
         previousPitch = nextPitch;
     }
