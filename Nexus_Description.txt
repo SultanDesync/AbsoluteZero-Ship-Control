@@ -1,75 +1,63 @@
-[size=5][b]AbsoluteZero — Mouse Alignment Assist for Starfield[/b][/size]
+[center][size=6][color=#00ccff][b]AbsoluteZero 0.2.0[/b][/color][/size]
+[size=4][b][color=#ffaa00]Mouse alignment and optional locked-reticule steering for Starfield.[/color][/b][/size][/center]
 
-A lightweight SFSE plugin that gently centers your ship's mouse aim when idle during flight, alongside an optional [b]Locked Reticule[/b] mode that drives ship steering directly while keeping your crosshair perfectly dead center. No joystick input, no throttle injection, no binding wizard — just smooth exponential decay and robust reticule locking.
-
-Mechanically inspired by [url=https://www.nexusmods.com/starfield/users/4477498]Xilandro[/url]'s [b]Flight Controls Autoalign[/b] (out of support since 2024). Logic was independently developed.
-
-[quote][b]Note[/b]: This is a standalone sister project to [url=https://www.nexusmods.com/starfield/mods/210]AbsoluteHOTAS[/url]. If you already use AbsoluteHOTAS, you don't need this — enable [font=Courier New]bAlignmentAssist = true[/font] in [font=Courier New]AbsoluteHOTAS.ini[/font] instead.[/quote]
+AbsoluteZero gently returns ship mouse aim toward center after input stops. Its optional Locked Reticule mode keeps the crosshair centered while translating mouse motion into steering. It runs standalone and now integrates with the shared Absolute Control menu.
 
 [line]
 
-[size=4][b]Requirements[/b][/size]
-[list]
-[*] [b]Starfield[/b] 1.16.242+
-[*] [b][url=https://sfse.silverlock.org/]SFSE[/url][/b] 0.2.20+
-[/list]
-
-[size=4][b]Installation[/b][/size]
-[list=1]
-[*] Extract [font=Courier New]AbsoluteZero.dll[/font] and [font=Courier New]AbsoluteZero.ini[/font] to [font=Courier New]Data\SFSE\Plugins\[/font]
-[/list]
-
-[size=4][b]Configuration[/b][/size]
-Edit [font=Courier New]Data\SFSE\Plugins\AbsoluteZero.ini[/font]:
-
-[b][MouseAlign][/b]
-[list]
-[*] [font=Courier New]bEnabled[/font] (Default: [font=Courier New]true[/font]) — Enable/disable alignment assist.
-[*] [font=Courier New]fRadius[/font] (Default: [font=Courier New]140.0[/font]) — Accumulator distance from center within which assist activates (0–200). Default is 70% of the circular range.
-[*] [font=Courier New]iIdleMs[/font] (Default: [font=Courier New]80[/font]) — Milliseconds the mouse must be idle before decay starts.
-[*] [font=Courier New]fDecayRate[/font] (Default: [font=Courier New]12.0[/font]) — Exponential decay speed. Higher values snap to center faster.
-[*] [font=Courier New]iPollRateHz[/font] (Default: [font=Courier New]120[/font]) — Polling frequency in Hz.
-[*] [font=Courier New]iSuppressKey[/font] (Default: [font=Courier New]0x42[/font] / B) — Hold this key to suppress auto-centering. Set to [font=Courier New]0[/font] to disable. Uses [url=https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes]Virtual Key Codes[/url].
-[*] [font=Courier New]bLogEnabled[/font] (Default: [font=Courier New]false[/font]) — Write debug info to [font=Courier New]AbsoluteZero.log[/font].
-[/list]
-
-[b][VirtualJoy][/b]
-[list]
-[*] [font=Courier New]bVirtualJoy[/font] (Default: [font=Courier New]false[/font]) — Enable Locked Reticule mode. Locks your crosshair to the center and drives steering directly via a virtual accumulator.
-[*] [font=Courier New]iVJoyToggleKey[/font] (Default: [font=Courier New]0x60[/font] / Numpad 0) — Virtual key code for toggling Locked Reticule mode on the fly.
-[*] [font=Courier New]bVJoyToggleAlt[/font] (Default: [font=Courier New]true[/font]) — Require the Alt key to be held when pressing the toggle key.
-[/list]
-
-[size=4][b]Live Tuning (In-Game Hotkeys)[/b][/size]
-Adjust settings on the fly without leaving the cockpit:
+[center][size=5][color=#ffcc00][b]Features[/b][/color][/size][/center]
 
 [list]
-[*] [font=Courier New]Alt + Numpad+ / Numpad-[/font] — Radius ↑/↓ (±2.0)
-[*] [font=Courier New]Ctrl + Numpad+ / Numpad-[/font] — Idle delay ↑/↓ (±10 ms)
-[*] [font=Courier New]Shift + Numpad+ / Numpad-[/font] — Decay rate ↑/↓ (±0.5)
-[*] [font=Courier New]Ctrl + Alt + Numpad0[/font] — Toggle enable/disable
-[*] [font=Courier New]Alt + Numpad0[/font] — Toggle Locked Reticule (Virtual Joy) mode (key configurable in INI)
-[*] [font=Courier New]Ctrl + Alt + S[/font] — Save current settings to INI
+[*][b]Idle mouse centering[/b] with configurable radius, delay, and exponential decay.[/*]
+[*][b]Hold-to-suppress binding[/b] for temporary unrestricted mouse aim.[/*]
+[*][b]Locked Reticule mode[/b] for centered-crosshair steering when used standalone.[/*]
+[*][b]Native MOD OPTIONS page[/b] through Absolute Control, including binding capture and live settings.[/*]
+[*][b]Headless fallback[/b] through the INI and live-tuning hotkeys.[/*]
+[*][b]Safe HOTAS pairing[/b] through explicit axis ownership and one shared writer hook.[/*]
 [/list]
 
-All changes are logged to [font=Courier New]AbsoluteZero.log[/font] (always, regardless of [font=Courier New]bLogEnabled[/font]). Use [font=Courier New]Ctrl+Alt+S[/font] to persist your tuned values so they survive a game restart.
+[line]
 
-[size=4][b]How It Works[/b][/size]
-[list=1]
-[*] [b]Hook[/b]: At startup, the plugin AOB-scans for Starfield's rotational writer block and installs a trampoline hook to capture the source object pointer.
-[*] [b]Alignment Assist[/b]: A polling thread observes the captured mouse accumulator. When the mouse is idle and within the configured radius, it applies exponential decay to gently center the aim.
-[*] [b]Locked Reticule (VJoy)[/b]: When enabled, a C++ callback synchronously executes directly from the game's execution hook. It safely intercepts mouse movements per frame, zeros the vanilla accumulator to perfectly lock your crosshair in the center with zero jitter, and injects the delta into a normalized virtual accumulator that directly drives ship steering offsets. It fully mirrors the vanilla alignment assist and sustained turn mechanics!
-[/list]
+[center][size=5][color=#ffaa00][b]AbsoluteHOTAS compatibility[/b][/color][/size][/center]
 
-[size=4][b]Compatibility[/b][/size]
+AbsoluteZero and AbsoluteHOTAS cannot safely write pitch/yaw simultaneously. When both current builds are installed, AbsoluteZero owns mouse pitch/yaw steering and HOTAS yields its pitch/yaw stick bindings. HOTAS continues to control roll, strafe, throttle, buttons, and profiles while retaining the single shared writer hook.
+
+[b]Install both only when you want mouse steering to own pitch and yaw.[/b] A joystick cannot control those two axes while AbsoluteZero is present. Locked Reticule/VirtualJoy mode is unavailable in the paired configuration; native idle centering remains supported.
+
+Older or incompatible HOTAS versions fail closed instead of installing competing writer hooks.
+
+[line]
+
+[center][size=5][color=#00ccff][b]Requirements and installation[/b][/color][/size][/center]
+
 [list]
-[*] [color=#ff0000][b]Do NOT load alongside AbsoluteHOTAS[/b][/color] — both hook the same writer block. The plugin detects [font=Courier New]AbsoluteHOTAS.dll[/font] at load time and gracefully disables itself.
-[*] Compatible with other SFSE plugins that don't modify the rotational writer block.
+[*]Starfield 1.16.242 or 1.16.244[/*]
+[*][url=https://sfse.silverlock.org/]SFSE[/url] 0.2.20 or later[/*]
+[*]No Address Library required[/*]
+[*]Absolute Control is optional but recommended for the native in-game editor[/*]
 [/list]
 
-[size=4][b]Credits[/b][/size]
+Install normally with MO2 or Vortex, or place [font=Courier New]AbsoluteZero.dll[/font] and [font=Courier New]AbsoluteZero.ini[/font] in [font=Courier New]Data\SFSE\Plugins\[/font].
+
+With Absolute Control installed, open the Pause Menu, select [color=#ffaa00][b]MOD OPTIONS[/b][/color], and choose [b]AbsoluteZero[/b].
+
+[line]
+
+[center][size=5][color=#00ccff][b]Live tuning[/b][/color][/size][/center]
+
 [list]
-[*] [b]Xilandro[/b] — Mechanical inspiration (Flight Controls Autoalign)
-[*] [b]Starfield RE Team[/b] — [url=https://github.com/Starfield-Reverse-Engineering/CommonLibSF]CommonLibSF[/url]
-[*] [b]Ian Patterson / Stephen Abel[/b] — [url=https://sfse.silverlock.org/]SFSE[/url]
+[*][font=Courier New]Alt+Numpad+ / Alt+Numpad-[/font] — radius ±2.0[/*]
+[*][font=Courier New]Ctrl+Numpad+ / Ctrl+Numpad-[/font] — idle delay ±10 ms[/*]
+[*][font=Courier New]Shift+Numpad+ / Shift+Numpad-[/font] — decay rate ±0.5[/*]
+[*][font=Courier New]Ctrl+Alt+0[/font] — toggle idle centering[/*]
+[*][font=Courier New]Alt+Numpad0[/font] — toggle standalone Locked Reticule mode[/*]
+[*][font=Courier New]Ctrl+Alt+S[/font] — save current settings[/*]
 [/list]
+
+Logging is off by default and occurs only when [font=Courier New]bLogEnabled=true[/font].
+
+[line]
+
+[center][url=https://github.com/SultanDesync/AbsoluteZero-Ship-Control][color=#00ff88][b]Complete Guide and Source[/b][/color][/url]
+
+[url=https://www.nexusmods.com/starfield/mods/16668]AbsoluteHOTAS[/url] · [url=https://www.nexusmods.com/starfield/mods/17872]Absolute Head Tracking[/url][/center]
