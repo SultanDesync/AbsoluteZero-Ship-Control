@@ -2,6 +2,7 @@
 
 #include "Configuration.h"
 #include "ControlPanelDiscovery.h"
+#include "LiveComponentsExperimentalAPI.h"
 #include "SuppressBindingCodec.h"
 
 #include <algorithm>
@@ -31,7 +32,9 @@ bool g_editing{};
 std::mutex g_registrationMutex;
 std::atomic<const ApiV1*> g_hostApi{};
 std::atomic<bool> g_registered{};
+std::atomic<bool> g_livePreviewRegistered{};
 std::atomic<bool> g_terminalRejection{};
+std::atomic<std::uint64_t> g_liveSequence{};
 
 template <std::size_t N>
 void Copy(char (&target)[N], std::string_view source) noexcept {
@@ -86,6 +89,8 @@ ControlDescriptorV1 Control(ControlKind kind, std::uint32_t flags,
 const std::array g_controls{
     Control(ControlKind::Toggle, kControlNone, "enabled", "Enable auto-centering",
         "Gently return native ship mouse steering toward center after input stops."),
+    Control(ControlKind::Choice, kControlNone, "activation-mode", "Activation mode",
+        "Choose automatic idle centering or a one-shot center command.", 0, 1, 1),
     Control(ControlKind::FloatSlider, kControlNone, "radius", "Activation radius",
         "Only center the native mouse accumulator while it remains inside this radius.",
         1.0, 200.0, 1.0),
@@ -96,7 +101,10 @@ const std::array g_controls{
         0.5, 20.0, 0.5),
     Control(ControlKind::InputBinding, kBindingKeyboard | kBindingClearable,
         "suppress-binding", "Hold to suppress",
-        "Temporarily suspend auto-centering while this keyboard key is held."),
+        "In Automatic mode, temporarily suspend centering while this key is held."),
+    Control(ControlKind::InputBinding, kBindingKeyboard | kBindingClearable,
+        "center-binding", "Center on press",
+        "In Center on press mode, press this key once to begin centering immediately."),
     Control(ControlKind::IntegerSlider, kControlAdvanced, "poll-rate-hz", "Polling rate",
         "Alignment worker polling frequency in hertz.", 30, 500, 10),
     Control(ControlKind::Toggle, kControlAdvanced | kControlRequiresRestart,
@@ -112,11 +120,14 @@ Result __cdecl Read(void*, const char* rawId, ValueV1* output) noexcept {
         const std::string_view id{ rawId };
         const Config config = g_access.get();
         if (id == "enabled") *output = Boolean(config.enabled);
+        else if (id == "activation-mode") *output = Integer(config.centerOnPress ? 1 : 0);
         else if (id == "radius") *output = Float(config.radius);
         else if (id == "idle-ms") *output = Integer(config.idleMs);
         else if (id == "decay-rate") *output = Float(config.decayRate);
         else if (id == "suppress-binding") {
             *output = String(SuppressBindingCodec::Display(config.suppressKey));
+        } else if (id == "center-binding") {
+            *output = String(SuppressBindingCodec::Display(config.centerKey));
         } else if (id == "poll-rate-hz") *output = Integer(config.pollRateHz);
         else if (id == "diagnostic-log") *output = Boolean(config.enableLog);
         else return Result::NotFound;
@@ -164,6 +175,10 @@ Result __cdecl Write(void*, const char* rawId, const ValueV1* value) noexcept {
         bool accepted{};
         if (id == "enabled") {
             accepted = BooleanValue(*value, proposed.enabled);
+        } else if (id == "activation-mode") {
+            int mode{};
+            accepted = IntegerValue(*value, 0, 1, 1, mode);
+            if (accepted) proposed.centerOnPress = mode == 1;
         } else if (id == "radius") {
             accepted = FloatValue(*value, 1.0F, 200.0F, proposed.radius);
         } else if (id == "idle-ms") {
@@ -174,6 +189,10 @@ Result __cdecl Write(void*, const char* rawId, const ValueV1* value) noexcept {
             accepted = value->kind == ValueKind::String &&
                 std::memchr(value->stringValue, '\0', kStringValueCapacity) &&
                 SuppressBindingCodec::Parse(value->stringValue, proposed.suppressKey);
+        } else if (id == "center-binding") {
+            accepted = value->kind == ValueKind::String &&
+                std::memchr(value->stringValue, '\0', kStringValueCapacity) &&
+                SuppressBindingCodec::Parse(value->stringValue, proposed.centerKey);
         } else if (id == "poll-rate-hz") {
             accepted = IntegerValue(*value, 30, 500, 10, proposed.pollRateHz);
         } else if (id == "diagnostic-log") {
@@ -211,6 +230,25 @@ void __cdecl Cancel(void*) noexcept {
     }
 }
 
+Result __cdecl ReadChoiceOptions(void*, const char* rawId,
+    ChoiceOptionV1* options, std::uint32_t capacity,
+    std::uint32_t* count) noexcept {
+    if (!rawId || !count) return Result::InvalidArgument;
+    if (std::string_view{ rawId } != "activation-mode") return Result::NotFound;
+    constexpr std::array<std::pair<std::int64_t, std::string_view>, 2> values{{
+        { 0, "Automatic after idle" },
+        { 1, "Center on press" },
+    }};
+    *count = static_cast<std::uint32_t>(values.size());
+    if (!options || capacity < values.size()) return Result::CapacityExceeded;
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        options[index] = {};
+        options[index].value = values[index].first;
+        Copy(options[index].label, values[index].second);
+    }
+    return Result::Ok;
+}
+
 const ModuleDescriptorV1 g_module = [] {
     ModuleDescriptorV1 module;
     Copy(module.moduleId, kZeroModuleId);
@@ -233,7 +271,44 @@ const PageDescriptorV1 g_page = [] {
     page.writeDraft = &Write;
     page.apply = &Apply;
     page.cancel = &Cancel;
+    page.readChoiceOptions = &ReadChoiceOptions;
     return page;
+}();
+
+namespace Live = AbsoluteControlPanelExperimental;
+
+Live::Result __cdecl ReadCenteringPreview(
+    void*, Live::LiveFrameV1* output) noexcept {
+    if (!output || output->structSize < sizeof(Live::LiveFrameV1)) {
+        return Live::Result::InvalidArgument;
+    }
+    Live::LiveFrameV1 frame;
+    frame.kind = Live::ComponentKind::RadialResponse;
+    frame.sequence = g_liveSequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    frame.monotonicTimestampUs = (std::max)(1ULL, GetTickCount64() * 1000ULL);
+    frame.radialResponse.available = 1;
+    frame.radialResponse.liveX = 0.0;
+    frame.radialResponse.liveY = 0.0;
+    *output = frame;
+    return Live::Result::Ok;
+}
+
+const Live::LiveChannelDescriptorV1 g_livePreview = [] {
+    Live::LiveChannelDescriptorV1 descriptor;
+    Copy(descriptor.moduleId, kZeroModuleId);
+    Copy(descriptor.pageId, "mouse-alignment");
+    Copy(descriptor.channelId, "centering-lab");
+    Copy(descriptor.title, "Mouse centering response");
+    descriptor.kind = Live::ComponentKind::RadialResponse;
+    descriptor.flags = Live::kLivePresentationPinned;
+    descriptor.radialResponse.maximumRadius = 200.0;
+    Copy(descriptor.radialResponse.enabledControlId, "enabled");
+    Copy(descriptor.radialResponse.radiusControlId, "radius");
+    Copy(descriptor.radialResponse.idleMillisecondsControlId, "idle-ms");
+    Copy(descriptor.radialResponse.decayRateControlId, "decay-rate");
+    Copy(descriptor.radialResponse.pollRateControlId, "poll-rate-hz");
+    descriptor.readLiveFrame = &ReadCenteringPreview;
+    return descriptor;
 }();
 
 bool ValidApi(const ApiV1* api) noexcept {
@@ -255,6 +330,19 @@ const ApiV1* __cdecl ResolveLoadedHost(const wchar_t* moduleName) noexcept {
     return query(kAbiVersion);
 }
 
+const Live::ExperimentalApiV1* ResolveLoadedLiveHost(
+    const wchar_t* moduleName) noexcept {
+    if (!moduleName) return nullptr;
+    const auto module = GetModuleHandleW(moduleName);
+    if (!module) return nullptr;
+    const auto address = GetProcAddress(module,
+        "AbsoluteControlPanel_QueryLiveComponentsExperimental");
+    if (!address) return nullptr;
+    using Query = const Live::ExperimentalApiV1*(__cdecl*)(
+        std::uint32_t) noexcept;
+    return reinterpret_cast<Query>(address)(Live::kAbiVersion);
+}
+
 Result RegistrationFailure(Result result) noexcept {
     if (result == Result::NotReady) return result;
     g_terminalRejection.store(true, std::memory_order_release);
@@ -265,7 +353,17 @@ Result RegistrationFailure(Result result) noexcept {
 namespace ControlPanelSubscriber {
 
 AbsoluteControlPanelApi::Result RegisterDiscoveredHost() noexcept {
-    return Testing::RegisterWithResolver(&ResolveLoadedHost);
+    const auto result = Testing::RegisterWithResolver(&ResolveLoadedHost);
+    if (result == Result::Ok &&
+        !g_livePreviewRegistered.load(std::memory_order_acquire)) {
+        for (const auto moduleName : Discovery::kHostModuleNames) {
+            if (const auto* live = ResolveLoadedLiveHost(moduleName.data())) {
+                (void)Testing::RegisterLivePreview(live);
+                break;
+            }
+        }
+    }
+    return result;
 }
 
 bool IsHosted() noexcept {
@@ -341,6 +439,21 @@ void SetConfigurationAccess(ConfigurationAccess access) noexcept {
         ConfigurationAccess{ ProductionGet, ProductionApply, ProductionSave };
 }
 
+AbsoluteControlPanelApi::Result RegisterLivePreview(
+    const AbsoluteControlPanelExperimental::ExperimentalApiV1* api) noexcept {
+    if (!api || api->structSize < sizeof(Live::ExperimentalApiV1) ||
+        api->abiVersion != Live::kAbiVersion || !api->registerLiveChannel ||
+        (api->capabilities & Live::kLiveCapabilityRadialResponse) == 0) {
+        return Result::InvalidArgument;
+    }
+    const auto result = api->registerLiveChannel(&g_livePreview);
+    if (result == Live::Result::Ok || result == Live::Result::Duplicate) {
+        g_livePreviewRegistered.store(true, std::memory_order_release);
+        return Result::Ok;
+    }
+    return static_cast<Result>(result);
+}
+
 void Reset() noexcept {
     {
         std::lock_guard lock(g_editMutex);
@@ -350,11 +463,15 @@ void Reset() noexcept {
     }
     g_hostApi.store(nullptr, std::memory_order_release);
     g_registered.store(false, std::memory_order_release);
+    g_livePreviewRegistered.store(false, std::memory_order_release);
+    g_liveSequence.store(0, std::memory_order_release);
     g_terminalRejection.store(false, std::memory_order_release);
 }
 
 const PageDescriptorV1& Page() noexcept { return g_page; }
 const ModuleDescriptorV1& Module() noexcept { return g_module; }
+const AbsoluteControlPanelExperimental::LiveChannelDescriptorV1&
+LivePreview() noexcept { return g_livePreview; }
 
 } // namespace Testing
 } // namespace ControlPanelSubscriber

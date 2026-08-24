@@ -2,6 +2,7 @@
 
 #include "AbsoluteControlPanelAPI.h"
 #include "ConfigPolicy.h"
+#include "LiveComponentsExperimentalAPI.h"
 
 namespace ControlPanelSubscriber {
 
@@ -24,9 +25,13 @@ struct ConfigurationAccess {
 [[nodiscard]] AbsoluteControlPanelApi::Result RegisterWithResolver(
     ResolveLoadedHostCallback resolver) noexcept;
 void SetConfigurationAccess(ConfigurationAccess access) noexcept;
+[[nodiscard]] AbsoluteControlPanelApi::Result RegisterLivePreview(
+    const AbsoluteControlPanelExperimental::ExperimentalApiV1* api) noexcept;
 void Reset() noexcept;
 [[nodiscard]] const AbsoluteControlPanelApi::PageDescriptorV1& Page() noexcept;
 [[nodiscard]] const AbsoluteControlPanelApi::ModuleDescriptorV1& Module() noexcept;
+[[nodiscard]] const AbsoluteControlPanelExperimental::LiveChannelDescriptorV1&
+LivePreview() noexcept;
 
 } // namespace Testing
 } // namespace ControlPanelSubscriber

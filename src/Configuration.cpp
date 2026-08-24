@@ -61,6 +61,9 @@ Configuration::Config ReadConfiguration() {
     config.decayRate = ReadFloat("MouseAlign", "fDecayRate", defaults.decayRate, path);
     config.pollRateHz = ReadInt("MouseAlign", "iPollRateHz", defaults.pollRateHz, path);
     config.suppressKey = ReadInt("MouseAlign", "iSuppressKey", defaults.suppressKey, path);
+    config.centerOnPress =
+        ReadInt("MouseAlign", "iActivationMode", defaults.centerOnPress ? 1 : 0, path) == 1;
+    config.centerKey = ReadInt("MouseAlign", "iCenterKey", defaults.centerKey, path);
     config.enableLog = ReadBool("MouseAlign", "bLogEnabled", defaults.enableLog, path);
     config.virtualJoy = ReadBool("VirtualJoy", "bVirtualJoy", defaults.virtualJoy, path);
     config.vJoyToggleKey =
@@ -90,6 +93,8 @@ bool WriteAtomically(const Configuration::Config& config) {
                << "fDecayRate = " << std::format("{:.3f}", config.decayRate) << '\n'
                << "iPollRateHz = " << config.pollRateHz << '\n'
                << std::format("iSuppressKey = 0x{:02X}\n", config.suppressKey)
+               << "iActivationMode = " << (config.centerOnPress ? 1 : 0) << '\n'
+               << std::format("iCenterKey = 0x{:02X}\n", config.centerKey)
                << "bLogEnabled = " << Boolean(config.enableLog) << "\n\n"
                << "[VirtualJoy]\n"
                << "bVirtualJoy = " << Boolean(config.virtualJoy) << '\n'

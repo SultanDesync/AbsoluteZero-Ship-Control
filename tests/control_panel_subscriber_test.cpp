@@ -10,6 +10,7 @@
 
 namespace {
 using namespace AbsoluteControlPanelApi;
+namespace Live = AbsoluteControlPanelExperimental;
 
 ConfigPolicy::Config g_config = ConfigPolicy::Defaults();
 int g_saves{};
@@ -40,6 +41,20 @@ std::uint8_t __cdecl IsOpen() noexcept { return g_open ? 1 : 0; }
 std::uint8_t __cdecl IsCapture() noexcept { return g_capture ? 1 : 0; }
 
 ApiV1 g_api{};
+const Live::LiveChannelDescriptorV1* g_registeredLive{};
+
+Live::Result __cdecl RegisterLive(
+    const Live::LiveChannelDescriptorV1* descriptor) noexcept {
+    g_registeredLive = descriptor;
+    return Live::Result::Ok;
+}
+Live::Result __cdecl UnregisterLive(const char*) noexcept {
+    return Live::Result::Ok;
+}
+Live::Result __cdecl RefreshLive(
+    const char*, const char*, const char*) noexcept {
+    return Live::Result::Ok;
+}
 
 const ApiV1* __cdecl ResolveCurrentHost(const wchar_t* name) noexcept {
     ++g_resolveCalls;
@@ -92,6 +107,7 @@ void ResetHarness() {
     g_resolveCalls = 0;
     g_sawResearchDev = false;
     g_api = {};
+    g_registeredLive = nullptr;
     g_api.moduleId = kModuleId.data();
     g_api.registerPage = &RegisterPage;
     g_api.unregisterModule = &Unregister;
@@ -150,19 +166,44 @@ int main() {
     assert(ControlPanelSubscriber::IsMenuOpen());
     assert(ControlPanelSubscriber::IsInputCaptureActive());
 
+    Live::ExperimentalApiV1 liveApi;
+    liveApi.registerLiveChannel = &RegisterLive;
+    liveApi.unregisterModule = &UnregisterLive;
+    liveApi.requestImmediateRefresh = &RefreshLive;
+    assert(ControlPanelSubscriber::Testing::RegisterLivePreview(&liveApi) ==
+        Result::Ok);
+    assert(g_registeredLive &&
+        g_registeredLive->kind == Live::ComponentKind::RadialResponse &&
+        std::strcmp(g_registeredLive->channelId, "centering-lab") == 0 &&
+        std::strcmp(g_registeredLive->radialResponse.radiusControlId,
+            "radius") == 0);
+    Live::LiveFrameV1 liveFrame;
+    assert(g_registeredLive->readLiveFrame(nullptr, &liveFrame) ==
+        Live::Result::Ok && liveFrame.radialResponse.available == 1 &&
+        liveFrame.sequence > 0);
+
     const auto& page = ControlPanelSubscriber::Testing::Page();
-    assert(page.controlCount == 7);
-    const auto& binding = page.controls[4];
+    assert(page.controlCount == 9);
+    const auto& binding = page.controls[5];
     assert(binding.kind == ControlKind::InputBinding);
     assert((binding.flags & kBindingKeyboard) != 0);
     assert((binding.flags & kBindingClearable) != 0);
     assert((binding.flags & kBindingModifiers) == 0);
+    assert(page.controls[1].kind == ControlKind::Choice);
+    ChoiceOptionV1 activationOptions[2]{};
+    std::uint32_t activationOptionCount{};
+    assert(page.readChoiceOptions(nullptr, "activation-mode", activationOptions,
+        2, &activationOptionCount) == Result::Ok);
+    assert(activationOptionCount == 2 && activationOptions[0].value == 0 &&
+        activationOptions[1].value == 1);
 
     ValueV1 value;
     assert(page.readValue(nullptr, "enabled", &value) == Result::Ok &&
         value.kind == ValueKind::Boolean);
     assert(page.readValue(nullptr, "suppress-binding", &value) == Result::Ok &&
         value.kind == ValueKind::String && std::strcmp(value.stringValue, "B") == 0);
+    assert(page.readValue(nullptr, "center-binding", &value) == Result::Ok &&
+        value.kind == ValueKind::String && std::strcmp(value.stringValue, "C") == 0);
     assert(page.readValue(nullptr, "missing", &value) == Result::NotFound);
 
     g_config.radius = 55.0F;
@@ -182,12 +223,20 @@ int main() {
     auto clear = String("");
     assert(page.writeDraft(nullptr, "suppress-binding", &clear) == Result::Ok &&
         g_config.suppressKey == 0);
+    auto pressMode = Integer(1);
+    assert(page.writeDraft(nullptr, "activation-mode", &pressMode) == Result::Ok &&
+        g_config.centerOnPress);
+    auto center = String("keyboard:0x4A;ctrl=0;alt=0;shift=0");
+    assert(page.writeDraft(nullptr, "center-binding", &center) == Result::Ok &&
+        g_config.centerKey == 0x4A);
     auto enabled = Boolean(false);
     assert(page.writeDraft(nullptr, "enabled", &enabled) == Result::Ok &&
         !g_config.enabled);
     page.cancel(nullptr);
     assert(g_config.radius == 55.0F && g_config.enabled &&
-        g_config.suppressKey == ConfigPolicy::Defaults().suppressKey);
+        !g_config.centerOnPress &&
+        g_config.suppressKey == ConfigPolicy::Defaults().suppressKey &&
+        g_config.centerKey == ConfigPolicy::Defaults().centerKey);
 
     assert(page.writeDraft(nullptr, "radius", &radius) == Result::Ok);
     assert(page.apply(nullptr) == Result::Ok && g_saves == 1);

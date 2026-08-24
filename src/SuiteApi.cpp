@@ -25,7 +25,9 @@ ConfigurationV1 ToApi(const Configuration::Config& config) {
 }
 
 Configuration::Config FromApi(const ConfigurationV1& input) {
-    Configuration::Config output;
+    // The stable v1 suite ABI predates press-to-center. Preserve those newer
+    // fields when a legacy Workbench client edits the v1 configuration.
+    Configuration::Config output = Configuration::Get();
     output.enabled = input.enabled != 0;
     output.virtualJoy = input.virtualJoy != 0;
     output.vJoyToggleAlt = input.vJoyToggleAlt != 0;
@@ -115,7 +117,7 @@ const ApiV1 g_api{
     .abiVersion = kAbiVersion,
     .moduleId = "absolute.zero",
     .displayName = "AbsoluteZero Ship Control",
-    .version = "0.2.0-alpha",
+    .version = "1.3.0",
     .getStatus = &GetStatus,
     .getConfiguration = &GetConfiguration,
     .applyConfiguration = &ApplyConfiguration,

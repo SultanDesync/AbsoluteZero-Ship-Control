@@ -1,4 +1,4 @@
-# AbsoluteZero v0.2.0 — Mouse Steering for Starfield
+# AbsoluteZero v1.3.0 — Mouse Steering for Starfield
 
 AbsoluteZero is an SFSE plugin for mouse-flight alignment and optional locked-reticule steering.
 It can gently return the ship's mouse-aim accumulator toward center after input stops, or keep the
@@ -14,6 +14,9 @@ Mechanically inspired by [Xilandro](https://www.nexusmods.com/starfield/users/44
 - Optional Locked Reticule mode for centered-crosshair mouse steering.
 - Live in-game tuning hotkeys and explicit save command.
 - Native Absolute Control **Mouse Alignment** page with live settings and binding capture.
+- Interactive circular tuning lab: click once to capture the demo reticle, move it, then click
+  again to watch the configured idle delay and exponential return from that release point.
+- Optional one-shot **Center on press** activation mode alongside automatic idle centering.
 - Standalone runtime with direct INI and hotkey operation when no shared frontend is installed.
 - Safe paired operation with current AbsoluteHOTAS builds through one shared writer owner.
 - Fail-closed runtime validation and optional diagnostics.
@@ -71,6 +74,8 @@ Direct configuration remains available in `AbsoluteZero.ini`:
 | `fDecayRate` | `12.0` | Exponential centering speed. |
 | `iPollRateHz` | `120` | Worker polling frequency. |
 | `iSuppressKey` | `0x42` | Hold-to-suppress virtual key; `0` disables it. |
+| `iActivationMode` | `0` | `0` automatically centers after idle; `1` centers once when activated. |
+| `iCenterKey` | `0x43` | One-shot center key used by activation mode `1`; `0` disables it. |
 | `bLogEnabled` | `false` | Write `AbsoluteZero.log`. |
 | `bVirtualJoy` | `false` | Enable standalone Locked Reticule mode. |
 | `iVJoyToggleKey` | `0x60` | Locked Reticule toggle key. |

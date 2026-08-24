@@ -157,6 +157,8 @@ void Poll(std::stop_token stopToken) {
     float virtualYaw{};
     float virtualPitch{};
     int idleFrames{};
+    bool previousCenterDown{};
+    bool centerRequested{};
     auto lastTime = std::chrono::steady_clock::now();
     HotkeyState hotkeys;
     RuntimePaths::AppendLog("[AlignmentAssist]", "Synchronized polling worker started.");
@@ -172,10 +174,23 @@ void Poll(std::stop_token stopToken) {
         config = Configuration::Get();
 
         if (!config.enabled) {
+            centerRequested = false;
             MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
             continue;
         }
-        if (config.suppressKey > 0 && KeyDown(config.suppressKey)) {
+        const bool centerInputSuppressed = ControlPanelSubscriber::IsMenuOpen() ||
+            ControlPanelSubscriber::IsInputCaptureActive() ||
+            SuiteState::WorkbenchOpen() || SuiteState::InputCaptureActive();
+        const bool centerDown = config.centerKey > 0 && KeyDown(config.centerKey);
+        const bool centerPressed = !centerInputSuppressed &&
+            config.centerOnPress && centerDown && !previousCenterDown;
+        previousCenterDown = centerDown;
+        if (centerPressed) centerRequested = true;
+        if (centerInputSuppressed) centerRequested = false;
+        if (!config.centerOnPress) centerRequested = false;
+
+        if (!config.centerOnPress && config.suppressKey > 0 &&
+            KeyDown(config.suppressKey)) {
             idleFrames = 0;
             continue;
         }
@@ -190,73 +205,82 @@ void Poll(std::stop_token stopToken) {
             std::chrono::duration<float>(now - lastTime).count(), 0.0001F, 0.1F);
         lastTime = now;
 
-        if (config.virtualJoy && MouseAlignHook::SupportsVirtualJoy()) {
+        const bool usingVirtualJoy =
+            config.virtualJoy && MouseAlignHook::SupportsVirtualJoy();
+        if (usingVirtualJoy) {
             virtualYaw = MouseAlignHook::GetVirtualYaw();
             virtualPitch = MouseAlignHook::GetVirtualPitch();
-            constexpr float epsilon = 0.5F;
-            const bool moved = std::abs(virtualYaw - previousYaw) > epsilon ||
-                               std::abs(virtualPitch - previousPitch) > epsilon;
-            previousYaw = virtualYaw;
-            previousPitch = virtualPitch;
-            idleFrames = moved ? 0 : idleFrames + 1;
-            const int threshold =
-                std::max(1, (config.pollRateHz * config.idleMs) / 1000);
-            if (idleFrames >= threshold) {
-                const float distance = std::hypot(virtualYaw, virtualPitch);
-                if (distance <= config.radius && distance > 0.1F) {
-                    const float factor = std::exp(-config.decayRate * deltaTime);
-                    virtualYaw *= factor;
-                    virtualPitch *= factor;
-                    if (std::abs(virtualYaw) < 0.1F) {
-                        virtualYaw = 0.0F;
-                    }
-                    if (std::abs(virtualPitch) < 0.1F) {
-                        virtualPitch = 0.0F;
-                    }
-                }
-            }
             constexpr float maximumRadius = 200.0F;
-            const float distance = std::hypot(virtualYaw, virtualPitch);
-            if (distance > maximumRadius) {
-                const float scale = maximumRadius / distance;
+            const float virtualDistance = std::hypot(virtualYaw, virtualPitch);
+            if (virtualDistance > maximumRadius) {
+                const float scale = maximumRadius / virtualDistance;
                 virtualYaw *= scale;
                 virtualPitch *= scale;
             }
-            MouseAlignHook::SetVirtualJoy(true, virtualYaw, virtualPitch);
+        }
+        // Preserve the previous virtual-joystick ownership transition even on
+        // frames that exit early for movement, idle delay, or one-shot state.
+        MouseAlignHook::SetVirtualJoy(usingVirtualJoy, virtualYaw, virtualPitch);
+        constexpr float epsilon = 0.5F;
+        float observedYaw = usingVirtualJoy ? virtualYaw : currentYaw;
+        float observedPitch = usingVirtualJoy ? virtualPitch : currentPitch;
+        const bool moved = std::abs(observedYaw - previousYaw) > epsilon ||
+                           std::abs(observedPitch - previousPitch) > epsilon;
+        previousYaw = observedYaw;
+        previousPitch = observedPitch;
+
+        if (config.centerOnPress && !centerRequested) {
+            idleFrames = 0;
+            MouseAlignHook::SetVirtualJoy(usingVirtualJoy, virtualYaw, virtualPitch);
             continue;
         }
-
-        MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
-        constexpr float epsilon = 0.5F;
-        const bool moved = std::abs(currentYaw - previousYaw) > epsilon ||
-                           std::abs(currentPitch - previousPitch) > epsilon;
-        previousYaw = currentYaw;
-        previousPitch = currentPitch;
+        if (config.centerOnPress && moved && !centerPressed) {
+            // Fresh player input cancels an in-progress one-shot center. Writes
+            // performed below update previousYaw/previousPitch, so the worker
+            // does not mistake its own exponential decay for player movement.
+            centerRequested = false;
+            idleFrames = 0;
+            MouseAlignHook::SetVirtualJoy(usingVirtualJoy, virtualYaw, virtualPitch);
+            continue;
+        }
         if (moved) {
             idleFrames = 0;
             continue;
         }
-        ++idleFrames;
-        const int threshold = std::max(1, (config.pollRateHz * config.idleMs) / 1000);
-        if (idleFrames < threshold) {
-            continue;
+        if (!config.centerOnPress) {
+            ++idleFrames;
+            const int threshold =
+                std::max(1, (config.pollRateHz * config.idleMs) / 1000);
+            if (idleFrames < threshold) continue;
         }
-        const float distance = std::hypot(currentYaw, currentPitch);
+        const float distance = std::hypot(observedYaw, observedPitch);
         if (distance > config.radius || distance <= 0.1F) {
+            if (config.centerOnPress) centerRequested = false;
+            MouseAlignHook::SetVirtualJoy(usingVirtualJoy, virtualYaw, virtualPitch);
             continue;
         }
         const float factor = std::exp(-config.decayRate * deltaTime);
-        float nextYaw = currentYaw * factor;
-        float nextPitch = currentPitch * factor;
+        float nextYaw = observedYaw * factor;
+        float nextPitch = observedPitch * factor;
         if (std::abs(nextYaw) < 0.1F) {
             nextYaw = 0.0F;
         }
         if (std::abs(nextPitch) < 0.1F) {
             nextPitch = 0.0F;
         }
-        MouseAlignHook::WriteAccumulator(nextYaw, nextPitch);
+        if (usingVirtualJoy) {
+            virtualYaw = nextYaw;
+            virtualPitch = nextPitch;
+            MouseAlignHook::SetVirtualJoy(true, virtualYaw, virtualPitch);
+        } else {
+            MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
+            MouseAlignHook::WriteAccumulator(nextYaw, nextPitch);
+        }
         previousYaw = nextYaw;
         previousPitch = nextPitch;
+        if (config.centerOnPress && nextYaw == 0.0F && nextPitch == 0.0F) {
+            centerRequested = false;
+        }
     }
     MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
 }

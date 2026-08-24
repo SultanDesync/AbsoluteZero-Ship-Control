@@ -1,4 +1,4 @@
-[center][size=6][color=#00ccff][b]AbsoluteZero 0.2.0[/b][/color][/size]
+[center][size=6][color=#00ccff][b]AbsoluteZero 1.3.0[/b][/color][/size]
 [size=4][b][color=#ffaa00]Mouse alignment and optional locked-reticule steering for Starfield.[/color][/b][/size][/center]
 
 AbsoluteZero gently returns ship mouse aim toward center after input stops. Its optional Locked Reticule mode keeps the crosshair centered while translating mouse motion into steering. It runs standalone and now integrates with the shared Absolute Control menu.
@@ -12,6 +12,8 @@ AbsoluteZero gently returns ship mouse aim toward center after input stops. Its 
 [*][b]Hold-to-suppress binding[/b] for temporary unrestricted mouse aim.[/*]
 [*][b]Locked Reticule mode[/b] for centered-crosshair steering when used standalone.[/*]
 [*][b]Native MOD OPTIONS page[/b] through Absolute Control, including binding capture and live settings.[/*]
+[*][b]Interactive centering lab[/b] that responds continuously to mouse movement and demonstrates the configured activation radius, idle delay, and return rate.[/*]
+[*][b]Center on press mode[/b] with its own binding as an alternative to automatic idle centering.[/*]
 [*][b]Headless fallback[/b] through the INI and live-tuning hotkeys.[/*]
 [*][b]Safe HOTAS pairing[/b] through explicit axis ownership and one shared writer hook.[/*]
 [/list]

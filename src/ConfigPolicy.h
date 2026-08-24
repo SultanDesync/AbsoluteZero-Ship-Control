@@ -15,6 +15,8 @@ struct Config {
     float decayRate{12.0F};
     int pollRateHz{120};
     int suppressKey{0x42};
+    bool centerOnPress{};
+    int centerKey{0x43};
     bool enableLog{};
 
     auto operator<=>(const Config&) const = default;
@@ -35,6 +37,7 @@ struct Config {
     config.decayRate = std::clamp(config.decayRate, 0.5F, 20.0F);
     config.pollRateHz = std::clamp(config.pollRateHz, 30, 500);
     config.suppressKey = std::clamp(config.suppressKey, 0, 255);
+    config.centerKey = std::clamp(config.centerKey, 0, 255);
     config.vJoyToggleKey = std::clamp(config.vJoyToggleKey, 0, 255);
     return config;
 }

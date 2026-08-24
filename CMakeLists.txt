@@ -5,7 +5,7 @@ set(X_VCPKG_APPLOCAL_DEPS_INSTALL OFF)
 
 project(
   AbsoluteZero
-  VERSION 0.2.0
+  VERSION 1.3.0
   DESCRIPTION "Mouse Alignment Assist for Starfield"
   LANGUAGES CXX
 )
@@ -56,6 +56,7 @@ set(absolute_zero_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/AbsoluteWorkbenchAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteControlPanelAPI.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/LiveComponentsExperimentalAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteZeroAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteMouseSteeringAPI.h
   ${CMAKE_CURRENT_BINARY_DIR}/version.rc
@@ -163,12 +164,13 @@ add_custom_command(
     ${PACKAGE_PLUGIN_DIR}
 )
 
-set(RELEASE_ARCHIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/releases")
+set(RELEASE_ARCHIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/releases/v${PROJECT_VERSION}")
 set(RELEASE_ARCHIVE_NAME "${PROJECT_NAME}-v${PROJECT_VERSION}-${BUILD_NAME}.zip")
 
 add_custom_target(
   package-mo2
   COMMAND ${CMAKE_COMMAND} -E make_directory ${RELEASE_ARCHIVE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${PACKAGE_ROOT}/Data" "${RELEASE_ARCHIVE_DIR}/Data"
   COMMAND ${CMAKE_COMMAND} -E tar "cfv" "${RELEASE_ARCHIVE_DIR}/${RELEASE_ARCHIVE_NAME}" --format=zip "Data"
   WORKING_DIRECTORY ${PACKAGE_ROOT}
   DEPENDS AbsoluteZero

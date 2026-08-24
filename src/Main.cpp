@@ -171,7 +171,7 @@ bool RegisterSfseListener(const SFSE::LoadInterface* sfse) noexcept {
 SFSEPluginLoad(const SFSE::LoadInterface* sfse) {
     RuntimePaths::EnableFileLogging();
     InstallCrashLogger();
-    RuntimePaths::AppendLogAlways("[Main]", "AbsoluteZero 0.2.0-alpha startup.");
+    RuntimePaths::AppendLogAlways("[Main]", "AbsoluteZero 1.3.0 startup.");
     Configuration::Load();
 
     if (!sfse) {
