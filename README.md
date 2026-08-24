@@ -77,7 +77,7 @@ Direct configuration remains available in `AbsoluteZero.ini`:
 | `iActivationMode` | `0` | `0` automatically centers after idle; `1` centers once when activated. |
 | `iCenterKey` | `0x43` | One-shot center key used by activation mode `1`; `0` disables it. |
 | `bLogEnabled` | `false` | Write `AbsoluteZero.log`. |
-| `bVirtualJoy` | `false` | Enable standalone Locked Reticule mode. |
+| `bVirtualJoy` | `true` | Enable standalone Locked Reticule mode. |
 | `iVJoyToggleKey` | `0x60` | Locked Reticule toggle key. |
 | `bVJoyToggleAlt` | `true` | Require Alt for that toggle. |
 
