@@ -1,7 +1,9 @@
 #include "ControlPanelSubscriber.h"
+#include "AbsoluteControlSubscriberKit.h"
 
 #include "Configuration.h"
 #include "ControlPanelDiscovery.h"
+#include "InputBusClient.h"
 #include "LiveComponentsExperimentalAPI.h"
 #include "SuppressBindingCodec.h"
 
@@ -71,6 +73,11 @@ ValueV1 String(std::string_view value) noexcept {
     return result;
 }
 
+SuppressBindingCodec::KeyboardBinding Binding(int virtualKey, bool control,
+    bool alt, bool shift) noexcept {
+    return { virtualKey, control, alt, shift };
+}
+
 ControlDescriptorV1 Control(ControlKind kind, std::uint32_t flags,
     std::string_view id, std::string_view label, std::string_view description,
     double minimum = 0.0, double maximum = 0.0, double step = 0.0) {
@@ -86,11 +93,18 @@ ControlDescriptorV1 Control(ControlKind kind, std::uint32_t flags,
     return control;
 }
 
-const std::array g_controls{
+const std::array g_landingControls{
     Control(ControlKind::Toggle, kControlNone, "enabled", "Enable auto-centering",
         "Gently return native ship mouse steering toward center after input stops."),
     Control(ControlKind::Choice, kControlNone, "activation-mode", "Activation mode",
         "Choose automatic idle centering or a one-shot center command.", 0, 1, 1),
+    Control(ControlKind::Toggle, kControlNone, "locked-reticule-enabled", "Always lock reticle",
+        "Keep the reticle locked to the center and translate mouse motion into direct ship steering."),
+    Control(ControlKind::IntegerSlider, kControlAdvanced, "poll-rate-hz", "Polling rate",
+        "Alignment worker polling frequency in hertz.", 30, 500, 10),
+    Control(ControlKind::Toggle, kControlAdvanced | kControlRequiresRestart,
+        "diagnostic-log", "Diagnostic logging",
+        "Write detailed AbsoluteZero diagnostics after restart."),
     Control(ControlKind::FloatSlider, kControlNone, "radius", "Activation radius",
         "Only center the native mouse accumulator while it remains inside this radius.",
         1.0, 200.0, 1.0),
@@ -98,18 +112,22 @@ const std::array g_controls{
         "Milliseconds without mouse movement before centering begins.", 10, 500, 10),
     Control(ControlKind::FloatSlider, kControlNone, "decay-rate", "Centering rate",
         "How quickly steering returns toward center; higher values settle faster.",
-        0.5, 20.0, 0.5),
-    Control(ControlKind::InputBinding, kBindingKeyboard | kBindingClearable,
+        0.5, 20.0, 0.5)
+};
+
+const std::array g_bindingsControls{
+    Control(ControlKind::InputBinding,
+        kBindingKeyboard | kBindingModifiers | kBindingController | kBindingClearable,
         "suppress-binding", "Hold to suppress",
-        "In Automatic mode, temporarily suspend centering while this key is held."),
-    Control(ControlKind::InputBinding, kBindingKeyboard | kBindingClearable,
+        "In Automatic mode, temporarily suspend centering while this key or joystick button is held."),
+    Control(ControlKind::InputBinding,
+        kBindingKeyboard | kBindingModifiers | kBindingController | kBindingClearable,
         "center-binding", "Center on press",
-        "In Center on press mode, press this key once to begin centering immediately."),
-    Control(ControlKind::IntegerSlider, kControlAdvanced, "poll-rate-hz", "Polling rate",
-        "Alignment worker polling frequency in hertz.", 30, 500, 10),
-    Control(ControlKind::Toggle, kControlAdvanced | kControlRequiresRestart,
-        "diagnostic-log", "Diagnostic logging",
-        "Write detailed AbsoluteZero diagnostics after restart.")
+        "In Center on press mode, press this key or joystick button once to begin centering immediately."),
+    Control(ControlKind::InputBinding,
+        kBindingKeyboard | kBindingModifiers | kBindingController | kBindingClearable,
+        "locked-reticule-toggle-binding", "Locked reticle toggle",
+        "Toggle locked reticle mode using a keyboard shortcut or joystick button.")
 };
 
 Result __cdecl Read(void*, const char* rawId, ValueV1* output) noexcept {
@@ -125,11 +143,16 @@ Result __cdecl Read(void*, const char* rawId, ValueV1* output) noexcept {
         else if (id == "idle-ms") *output = Integer(config.idleMs);
         else if (id == "decay-rate") *output = Float(config.decayRate);
         else if (id == "suppress-binding") {
-            *output = String(SuppressBindingCodec::Display(config.suppressKey));
+            *output = String(SuppressBindingCodec::DisplayToken(config.suppressBinding));
         } else if (id == "center-binding") {
-            *output = String(SuppressBindingCodec::Display(config.centerKey));
+            *output = String(SuppressBindingCodec::DisplayToken(config.centerBinding));
+        } else if (id == "locked-reticule-enabled") {
+            *output = Boolean(config.virtualJoy);
+        } else if (id == "locked-reticule-toggle-binding") {
+            *output = String(SuppressBindingCodec::DisplayToken(config.vJoyToggleBinding));
         } else if (id == "poll-rate-hz") *output = Integer(config.pollRateHz);
         else if (id == "diagnostic-log") *output = Boolean(config.enableLog);
+        else if (id == "tuning-header" || id == "bindings-header") return Result::Ok;
         else return Result::NotFound;
         return Result::Ok;
     } catch (...) {
@@ -187,12 +210,60 @@ Result __cdecl Write(void*, const char* rawId, const ValueV1* value) noexcept {
             accepted = FloatValue(*value, 0.5F, 20.0F, proposed.decayRate);
         } else if (id == "suppress-binding") {
             accepted = value->kind == ValueKind::String &&
-                std::memchr(value->stringValue, '\0', kStringValueCapacity) &&
-                SuppressBindingCodec::Parse(value->stringValue, proposed.suppressKey);
+                std::memchr(value->stringValue, '\0', kStringValueCapacity);
+            if (accepted) {
+                proposed.suppressBinding = value->stringValue;
+                SuppressBindingCodec::KeyboardBinding binding;
+                if (SuppressBindingCodec::Parse(proposed.suppressBinding, binding)) {
+                    proposed.suppressKey = binding.virtualKey;
+                    proposed.suppressControl = binding.control;
+                    proposed.suppressAlt = binding.alt;
+                    proposed.suppressShift = binding.shift;
+                } else if (proposed.suppressBinding.contains('@')) {
+                    proposed.suppressKey = 0;
+                    proposed.suppressControl = false;
+                    proposed.suppressAlt = false;
+                    proposed.suppressShift = false;
+                }
+            }
         } else if (id == "center-binding") {
             accepted = value->kind == ValueKind::String &&
-                std::memchr(value->stringValue, '\0', kStringValueCapacity) &&
-                SuppressBindingCodec::Parse(value->stringValue, proposed.centerKey);
+                std::memchr(value->stringValue, '\0', kStringValueCapacity);
+            if (accepted) {
+                proposed.centerBinding = value->stringValue;
+                SuppressBindingCodec::KeyboardBinding binding;
+                if (SuppressBindingCodec::Parse(proposed.centerBinding, binding)) {
+                    proposed.centerKey = binding.virtualKey;
+                    proposed.centerControl = binding.control;
+                    proposed.centerAlt = binding.alt;
+                    proposed.centerShift = binding.shift;
+                } else if (proposed.centerBinding.contains('@')) {
+                    proposed.centerKey = 0;
+                    proposed.centerControl = false;
+                    proposed.centerAlt = false;
+                    proposed.centerShift = false;
+                }
+            }
+        } else if (id == "locked-reticule-enabled") {
+            accepted = BooleanValue(*value, proposed.virtualJoy);
+        } else if (id == "locked-reticule-toggle-binding") {
+            accepted = value->kind == ValueKind::String &&
+                std::memchr(value->stringValue, '\0', kStringValueCapacity);
+            if (accepted) {
+                proposed.vJoyToggleBinding = value->stringValue;
+                SuppressBindingCodec::KeyboardBinding binding;
+                if (SuppressBindingCodec::Parse(proposed.vJoyToggleBinding, binding)) {
+                    proposed.vJoyToggleKey = binding.virtualKey;
+                    proposed.vJoyToggleControl = binding.control;
+                    proposed.vJoyToggleAlt = binding.alt;
+                    proposed.vJoyToggleShift = binding.shift;
+                } else if (proposed.vJoyToggleBinding.contains('@')) {
+                    proposed.vJoyToggleKey = 0;
+                    proposed.vJoyToggleControl = false;
+                    proposed.vJoyToggleAlt = false;
+                    proposed.vJoyToggleShift = false;
+                }
+            }
         } else if (id == "poll-rate-hz") {
             accepted = IntegerValue(*value, 30, 500, 10, proposed.pollRateHz);
         } else if (id == "diagnostic-log") {
@@ -224,7 +295,7 @@ Result __cdecl Apply(void*) noexcept {
 void __cdecl Cancel(void*) noexcept {
     try {
         std::lock_guard lock(g_editMutex);
-        if (g_editing) (void)g_access.apply(g_rollback);
+        if (g_editing && !g_access.apply(g_rollback)) return;
         g_editing = false;
     } catch (...) {
     }
@@ -249,29 +320,67 @@ Result __cdecl ReadChoiceOptions(void*, const char* rawId,
     return Result::Ok;
 }
 
+Result __cdecl BeginBindingCapture(void*, const char* rawId) noexcept {
+    if (!rawId) return Result::InvalidArgument;
+    return InputBusClient::Get().BeginCapture(rawId);
+}
+
+Result __cdecl PollBindingCapture(void*, const char* rawId, BindingCaptureV1* output) noexcept {
+    if (!rawId || !output) return Result::InvalidArgument;
+    return InputBusClient::Get().PollCapture(rawId, output);
+}
+
+Result __cdecl CancelBindingCapture(void*, const char* rawId) noexcept {
+    if (!rawId) return Result::InvalidArgument;
+    return InputBusClient::Get().CancelCapture(rawId);
+}
+
 const ModuleDescriptorV1 g_module = [] {
     ModuleDescriptorV1 module;
     Copy(module.moduleId, kZeroModuleId);
     Copy(module.displayName, "AbsoluteZero");
     Copy(module.description,
-        "Idle mouse centering; when paired with HOTAS, native mouse owns pitch and yaw.");
+        "Native ship mouse centering and locked-reticle steering.");
     return module;
 }();
 
-const PageDescriptorV1 g_page = [] {
+const PageDescriptorV1 g_landingPage = [] {
     PageDescriptorV1 page;
     Copy(page.moduleId, kZeroModuleId);
     Copy(page.pageId, "mouse-alignment");
     Copy(page.displayName, "Mouse Alignment");
     Copy(page.description,
-        "Tune when native mouse steering recenters after input stops.");
-    page.controlCount = static_cast<std::uint32_t>(g_controls.size());
-    page.controls = g_controls.data();
+        "Tune native mouse centering response and flight envelope.");
+    page.controlCount = static_cast<std::uint32_t>(g_landingControls.size());
+    page.controls = g_landingControls.data();
     page.readValue = &Read;
     page.writeDraft = &Write;
     page.apply = &Apply;
     page.cancel = &Cancel;
     page.readChoiceOptions = &ReadChoiceOptions;
+    page.beginBindingCapture = &BeginBindingCapture;
+    page.pollBindingCapture = &PollBindingCapture;
+    page.cancelBindingCapture = &CancelBindingCapture;
+    return page;
+}();
+
+const PageDescriptorV1 g_bindingsPage = [] {
+    PageDescriptorV1 page;
+    Copy(page.moduleId, kZeroModuleId);
+    Copy(page.pageId, "mouse-alignment-bindings");
+    Copy(page.displayName, "Bindings");
+    Copy(page.description,
+        "Configure keyboard and physical joystick shortcuts.");
+    page.controlCount = static_cast<std::uint32_t>(g_bindingsControls.size());
+    page.controls = g_bindingsControls.data();
+    page.readValue = &Read;
+    page.writeDraft = &Write;
+    page.apply = &Apply;
+    page.cancel = &Cancel;
+    page.readChoiceOptions = &ReadChoiceOptions;
+    page.beginBindingCapture = &BeginBindingCapture;
+    page.pollBindingCapture = &PollBindingCapture;
+    page.cancelBindingCapture = &CancelBindingCapture;
     return page;
 }();
 
@@ -312,13 +421,10 @@ const Live::LiveChannelDescriptorV1 g_livePreview = [] {
 }();
 
 bool ValidApi(const ApiV1* api) noexcept {
-    constexpr auto required = offsetof(ApiV1, registerModule) +
-        sizeof(api->registerModule);
-    return api && api->structSize >= required && api->abiVersion == kAbiVersion &&
-        api->moduleId && std::string_view(api->moduleId) == kModuleId &&
-        api->registerPage && api->unregisterModule && api->requestRefresh &&
-        api->registerModule;
+    return AbsoluteControlSubscriberKit::ValidHostApi(api);
 }
+
+using AbsoluteControlPanelQueryApi = const ApiV1*(__cdecl*)(std::uint32_t) noexcept;
 
 const ApiV1* __cdecl ResolveLoadedHost(const wchar_t* moduleName) noexcept {
     if (!moduleName) return nullptr;
@@ -346,8 +452,10 @@ const Live::ExperimentalApiV1* ResolveLoadedLiveHost(
 Result RegistrationFailure(Result result) noexcept {
     if (result == Result::NotReady) return result;
     g_terminalRejection.store(true, std::memory_order_release);
+    if (result == Result::Duplicate) return Result::Rejected;
     return result;
 }
+
 } // namespace
 
 namespace ControlPanelSubscriber {
@@ -357,6 +465,8 @@ AbsoluteControlPanelApi::Result RegisterDiscoveredHost() noexcept {
     if (result == Result::Ok &&
         !g_livePreviewRegistered.load(std::memory_order_acquire)) {
         for (const auto moduleName : Discovery::kHostModuleNames) {
+            if (ResolveLoadedHost(moduleName.data()) !=
+                g_hostApi.load(std::memory_order_acquire)) continue;
             if (const auto* live = ResolveLoadedLiveHost(moduleName.data())) {
                 (void)Testing::RegisterLivePreview(live);
                 break;
@@ -413,15 +523,14 @@ AbsoluteControlPanelApi::Result RegisterWithResolver(
                 g_terminalRejection.store(true, std::memory_order_release);
                 return Result::Rejected;
             }
-            const auto moduleResult = api->registerModule(&g_module);
-            if (moduleResult != Result::Ok && moduleResult != Result::Duplicate) {
-                return RegistrationFailure(moduleResult);
+            static const std::array pages{ g_landingPage, g_bindingsPage };
+            const auto registration = AbsoluteControlSubscriberKit::RegisterModulePagesDetailed(
+                api, g_module, pages);
+            if (registration.PartialRegistrationMayRemain()) {
+                return RegistrationFailure(Result::Rejected);
             }
-            const bool ownsModule = moduleResult == Result::Ok;
-            const auto pageResult = api->registerPage(&g_page);
-            if (pageResult != Result::Ok && pageResult != Result::Duplicate) {
-                if (ownsModule) (void)api->unregisterModule(kZeroModuleId.data());
-                return RegistrationFailure(pageResult);
+            if (registration.result != Result::Ok) {
+                return RegistrationFailure(registration.result);
             }
             g_hostApi.store(api, std::memory_order_release);
             g_registered.store(true, std::memory_order_release);
@@ -441,17 +550,19 @@ void SetConfigurationAccess(ConfigurationAccess access) noexcept {
 
 AbsoluteControlPanelApi::Result RegisterLivePreview(
     const AbsoluteControlPanelExperimental::ExperimentalApiV1* api) noexcept {
+    std::scoped_lock lock(g_registrationMutex);
+    if (g_livePreviewRegistered.load(std::memory_order_acquire)) return Result::Ok;
     if (!api || api->structSize < sizeof(Live::ExperimentalApiV1) ||
         api->abiVersion != Live::kAbiVersion || !api->registerLiveChannel ||
         (api->capabilities & Live::kLiveCapabilityRadialResponse) == 0) {
         return Result::InvalidArgument;
     }
     const auto result = api->registerLiveChannel(&g_livePreview);
-    if (result == Live::Result::Ok || result == Live::Result::Duplicate) {
+    if (result == Live::Result::Ok) {
         g_livePreviewRegistered.store(true, std::memory_order_release);
         return Result::Ok;
     }
-    return static_cast<Result>(result);
+    return result == Live::Result::Duplicate ? Result::Rejected : static_cast<Result>(result);
 }
 
 void Reset() noexcept {
@@ -468,7 +579,8 @@ void Reset() noexcept {
     g_terminalRejection.store(false, std::memory_order_release);
 }
 
-const PageDescriptorV1& Page() noexcept { return g_page; }
+const PageDescriptorV1& Page() noexcept { return g_landingPage; }
+const PageDescriptorV1& BindingsPage() noexcept { return g_bindingsPage; }
 const ModuleDescriptorV1& Module() noexcept { return g_module; }
 const AbsoluteControlPanelExperimental::LiveChannelDescriptorV1&
 LivePreview() noexcept { return g_livePreview; }

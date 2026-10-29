@@ -49,6 +49,8 @@ bool AbsoluteHOTASPresent() {
            std::filesystem::exists(RuntimePaths::PluginDirectory() / L"AbsoluteHOTAS.dll", error);
 }
 
+extern "C" void VirtualJoySync();
+
 void InitializeRuntime() {
     if (g_runtimeInitialized.exchange(true)) {
         return;
@@ -63,17 +65,25 @@ void InitializeRuntime() {
             SuiteState::SetInactiveByHOTAS(false);
             SuiteState::SetHookInstalled(false);
             SuiteState::SetRuntimeReady(true);
-            if (Configuration::Get().virtualJoy) {
+            if (HotasMouseCompatibility::SupportsVirtualJoy()) {
+                HotasMouseCompatibility::RegisterWriterSyncCallback(&VirtualJoySync);
                 RuntimePaths::AppendLogAlways(
                     "[Compatibility]",
-                    "Legacy VirtualJoy is unavailable while sharing the HOTAS writer; native "
-                    "mouse auto-centering remains active.");
+                    "AbsoluteHOTAS accepted AbsoluteZero pitch/yaw ownership with ApiV2 "
+                    "synchronized writer-gate VJoy authority.");
+            } else {
+                if (Configuration::Get().virtualJoy) {
+                    RuntimePaths::AppendLogAlways(
+                        "[Compatibility]",
+                        "Legacy VirtualJoy is unavailable while sharing the HOTAS writer; native "
+                        "mouse auto-centering remains active.");
+                }
+                RuntimePaths::AppendLogAlways(
+                    "[Compatibility]",
+                    "AbsoluteHOTAS accepted AbsoluteZero pitch/yaw ownership (ApiV1). Using HOTAS's "
+                    "shared accumulator seam without installing a second writer hook.");
             }
             AlignmentAssist::Start();
-            RuntimePaths::AppendLogAlways(
-                "[Compatibility]",
-                "AbsoluteHOTAS accepted AbsoluteZero pitch/yaw ownership. Using HOTAS's shared "
-                "accumulator seam without installing a second writer hook.");
             return;
         }
 
@@ -171,7 +181,7 @@ bool RegisterSfseListener(const SFSE::LoadInterface* sfse) noexcept {
 SFSEPluginLoad(const SFSE::LoadInterface* sfse) {
     RuntimePaths::EnableFileLogging();
     InstallCrashLogger();
-    RuntimePaths::AppendLogAlways("[Main]", "AbsoluteZero 1.3.0 startup.");
+    RuntimePaths::AppendLogAlways("[Main]", "AbsoluteZero 1.4.0 startup.");
     Configuration::Load();
 
     if (!sfse) {

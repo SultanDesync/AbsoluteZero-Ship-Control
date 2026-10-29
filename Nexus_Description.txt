@@ -1,7 +1,7 @@
-[center][size=6][color=#00ccff][b]AbsoluteZero 1.3.0[/b][/color][/size]
-[size=4][b][color=#ffaa00]Mouse alignment and optional locked-reticule steering for Starfield.[/color][/b][/size][/center]
+[center][size=6][color=#00ccff][b]AbsoluteZero 1.4.0[/b][/color][/size]
+[size=4][b][color=#ffaa00]Mouse alignment and locked-reticule steering for Starfield.[/color][/b][/size][/center]
 
-AbsoluteZero gently returns ship mouse aim toward center after input stops. Its optional Locked Reticule mode keeps the crosshair centered while translating mouse motion into steering. It runs standalone and now integrates with the shared Absolute Control menu.
+AbsoluteZero gently returns ship mouse aim toward center after input stops. Its Locked Reticule mode keeps the crosshair centered while translating mouse motion into direct ship steering. It runs standalone and integrates with the shared Absolute Control menu.
 
 [line]
 
@@ -9,24 +9,23 @@ AbsoluteZero gently returns ship mouse aim toward center after input stops. Its 
 
 [list]
 [*][b]Idle mouse centering[/b] with configurable radius, delay, and exponential decay.[/*]
-[*][b]Hold-to-suppress binding[/b] for temporary unrestricted mouse aim.[/*]
-[*][b]Locked Reticule mode[/b] for centered-crosshair steering when used standalone.[/*]
-[*][b]Native MOD OPTIONS page[/b] through Absolute Control, including binding capture and live settings.[/*]
+[*][b]Locked Reticule mode[/b] for centered-crosshair direct mouse steering with in-menu toggle and hotkey.[/*]
 [*][b]Interactive centering lab[/b] that responds continuously to mouse movement and demonstrates the configured activation radius, idle delay, and return rate.[/*]
+[*][b]Dedicated Bindings tab[/b] with support for keyboard shortcuts and physical DirectInput joystick buttons / POV hats.[/*]
 [*][b]Center on press mode[/b] with its own binding as an alternative to automatic idle centering.[/*]
+[*][b]Hold-to-suppress binding[/b] for temporary unrestricted mouse aim in automatic mode.[/*]
+[*][b]Native MOD OPTIONS multi-tab page[/b] through Absolute Control, including binding capture and live settings.[/*]
 [*][b]Headless fallback[/b] through the INI and live-tuning hotkeys.[/*]
-[*][b]Safe HOTAS pairing[/b] through explicit axis ownership and one shared writer hook.[/*]
+[*][b]Safe HOTAS pairing[/b] through explicit axis ownership and backward-compatible shared writer integration.[/*]
 [/list]
 
 [line]
 
 [center][size=5][color=#ffaa00][b]AbsoluteHOTAS compatibility[/b][/color][/size][/center]
 
-AbsoluteZero and AbsoluteHOTAS cannot safely write pitch/yaw simultaneously. When both current builds are installed, AbsoluteZero owns mouse pitch/yaw steering and HOTAS yields its pitch/yaw stick bindings. HOTAS continues to control roll, strafe, throttle, buttons, and profiles while retaining the single shared writer hook.
+AbsoluteZero coordinates with AbsoluteHOTAS safely without competing writer hooks. When both are installed, AbsoluteZero owns mouse pitch/yaw steering while HOTAS controls roll, strafe, throttle, buttons, and profiles through its shared writer seam.
 
-[b]Install both only when you want mouse steering to own pitch and yaw.[/b] A joystick cannot control those two axes while AbsoluteZero is present. Locked Reticule/VirtualJoy mode is unavailable in the paired configuration; native idle centering remains supported.
-
-Older or incompatible HOTAS versions fail closed instead of installing competing writer hooks.
+A joystick cannot control pitch and yaw while AbsoluteZero is actively driving them. In paired mode, native idle centering remains fully supported.
 
 [line]
 
@@ -45,14 +44,14 @@ With Absolute Control installed, open the Pause Menu, select [color=#ffaa00][b]M
 
 [line]
 
-[center][size=5][color=#00ccff][b]Live tuning[/b][/color][/size][/center]
+[center][size=5][color=#00ccff][b]Live tuning & shortcuts[/b][/color][/size][/center]
 
 [list]
 [*][font=Courier New]Alt+Numpad+ / Alt+Numpad-[/font] — radius ±2.0[/*]
 [*][font=Courier New]Ctrl+Numpad+ / Ctrl+Numpad-[/font] — idle delay ±10 ms[/*]
 [*][font=Courier New]Shift+Numpad+ / Shift+Numpad-[/font] — decay rate ±0.5[/*]
 [*][font=Courier New]Ctrl+Alt+0[/font] — toggle idle centering[/*]
-[*][font=Courier New]Alt+Numpad0[/font] — toggle standalone Locked Reticule mode[/*]
+[*][font=Courier New]Alt+Numpad0[/font] — toggle Locked Reticule mode (default; remappable in MOD OPTIONS)[/*]
 [*][font=Courier New]Ctrl+Alt+S[/font] — save current settings[/*]
 [/list]
 

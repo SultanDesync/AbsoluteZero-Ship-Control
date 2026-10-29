@@ -117,7 +117,7 @@ const ApiV1 g_api{
     .abiVersion = kAbiVersion,
     .moduleId = "absolute.zero",
     .displayName = "AbsoluteZero Ship Control",
-    .version = "1.3.0",
+    .version = "1.4.0",
     .getStatus = &GetStatus,
     .getConfiguration = &GetConfiguration,
     .applyConfiguration = &ApplyConfiguration,

@@ -2,6 +2,7 @@
 
 #include "Configuration.h"
 #include "ControlPanelSubscriber.h"
+#include "InputBusClient.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
 #include "SuiteState.h"
@@ -33,6 +34,12 @@ struct HotkeyState {
 bool KeyDown(int virtualKey) {
     return virtualKey > 0 && virtualKey < 256 &&
            (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+}
+
+bool ShortcutDown(int virtualKey, bool control, bool alt, bool shift) {
+    return virtualKey > 0 && KeyDown(virtualKey) &&
+           KeyDown(VK_CONTROL) == control && KeyDown(VK_MENU) == alt &&
+           KeyDown(VK_SHIFT) == shift;
 }
 
 void LogChange(const char* parameter, const std::string& value,
@@ -112,6 +119,7 @@ void ProcessHotkeys(HotkeyState& previous, Configuration::Config& config) {
     }
     previous.shiftMinus = shiftMinus;
 
+
     const bool toggle = control && alt && !shift && KeyDown('0');
     if (!suppressed && toggle && !previous.toggle) {
         config.enabled = !config.enabled;
@@ -124,9 +132,11 @@ void ProcessHotkeys(HotkeyState& previous, Configuration::Config& config) {
     }
     previous.toggle = toggle;
 
-    const bool virtualJoyToggle = KeyDown(config.vJoyToggleKey) &&
-                                  (!config.vJoyToggleAlt || alt);
-    if (!suppressed && virtualJoyToggle && !previous.virtualJoyToggle) {
+    const bool kbVJoyToggle = ShortcutDown(config.vJoyToggleKey,
+        config.vJoyToggleControl, config.vJoyToggleAlt, config.vJoyToggleShift);
+    const bool joyVJoyToggle = !config.vJoyToggleBinding.empty() &&
+        InputBusClient::Get().WasControlPressed(config.vJoyToggleBinding);
+    if (!suppressed && (joyVJoyToggle || (kbVJoyToggle && !previous.virtualJoyToggle))) {
         config.virtualJoy = !config.virtualJoy;
         if (!config.virtualJoy) {
             MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
@@ -135,7 +145,7 @@ void ProcessHotkeys(HotkeyState& previous, Configuration::Config& config) {
         changedParameter = "bVirtualJoy";
         changedValue = config.virtualJoy ? "true" : "false";
     }
-    previous.virtualJoyToggle = virtualJoyToggle;
+    previous.virtualJoyToggle = kbVJoyToggle;
 
     const bool save = control && alt && !shift && KeyDown('S');
     if (!suppressed && save && !previous.save) {
@@ -181,16 +191,22 @@ void Poll(std::stop_token stopToken) {
         const bool centerInputSuppressed = ControlPanelSubscriber::IsMenuOpen() ||
             ControlPanelSubscriber::IsInputCaptureActive() ||
             SuiteState::WorkbenchOpen() || SuiteState::InputCaptureActive();
-        const bool centerDown = config.centerKey > 0 && KeyDown(config.centerKey);
+        const bool centerDown = ShortcutDown(config.centerKey, config.centerControl,
+            config.centerAlt, config.centerShift);
+        const bool joyCenterPressed = !config.centerBinding.empty() &&
+            InputBusClient::Get().WasControlPressed(config.centerBinding);
         const bool centerPressed = !centerInputSuppressed &&
-            config.centerOnPress && centerDown && !previousCenterDown;
+            config.centerOnPress && ((centerDown && !previousCenterDown) || joyCenterPressed);
         previousCenterDown = centerDown;
         if (centerPressed) centerRequested = true;
         if (centerInputSuppressed) centerRequested = false;
         if (!config.centerOnPress) centerRequested = false;
 
-        if (!config.centerOnPress && config.suppressKey > 0 &&
-            KeyDown(config.suppressKey)) {
+        const bool kbSuppress = ShortcutDown(config.suppressKey,
+            config.suppressControl, config.suppressAlt, config.suppressShift);
+        const bool joySuppress = !config.suppressBinding.empty() &&
+            InputBusClient::Get().IsControlDown(config.suppressBinding);
+        if (!config.centerOnPress && (kbSuppress || joySuppress)) {
             idleFrames = 0;
             continue;
         }

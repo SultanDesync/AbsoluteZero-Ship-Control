@@ -29,6 +29,7 @@ void SetConfigurationAccess(ConfigurationAccess access) noexcept;
     const AbsoluteControlPanelExperimental::ExperimentalApiV1* api) noexcept;
 void Reset() noexcept;
 [[nodiscard]] const AbsoluteControlPanelApi::PageDescriptorV1& Page() noexcept;
+[[nodiscard]] const AbsoluteControlPanelApi::PageDescriptorV1& BindingsPage() noexcept;
 [[nodiscard]] const AbsoluteControlPanelApi::ModuleDescriptorV1& Module() noexcept;
 [[nodiscard]] const AbsoluteControlPanelExperimental::LiveChannelDescriptorV1&
 LivePreview() noexcept;

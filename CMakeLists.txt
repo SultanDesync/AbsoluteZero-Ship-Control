@@ -5,7 +5,7 @@ set(X_VCPKG_APPLOCAL_DEPS_INSTALL OFF)
 
 project(
   AbsoluteZero
-  VERSION 1.3.0
+  VERSION 1.4.0
   DESCRIPTION "Mouse Alignment Assist for Starfield"
   LANGUAGES CXX
 )
@@ -54,6 +54,9 @@ set(absolute_zero_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelDiscovery.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/InputBusClient.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/InputBusClient.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteInputBusAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/AbsoluteWorkbenchAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteControlPanelAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/LiveComponentsExperimentalAPI.h
@@ -145,12 +148,15 @@ if(BUILD_TESTING)
     tests/control_panel_subscriber_test.cpp
     src/ControlPanelSubscriber.cpp
     src/SuppressBindingCodec.cpp
+    src/InputBusClient.cpp
+    shared/src/RuntimePaths.cpp
   )
   target_compile_features(control_panel_subscriber_test PRIVATE cxx_std_23)
   target_compile_definitions(control_panel_subscriber_test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
   target_include_directories(control_panel_subscriber_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/shared/include
   )
   add_test(NAME control_panel_subscriber COMMAND control_panel_subscriber_test)
 

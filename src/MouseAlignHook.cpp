@@ -1,5 +1,6 @@
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
+#include "HotasMouseCompatibility.h"
 #include <windows.h>
 #include <cstring>
 #include <cmath>
@@ -27,7 +28,27 @@ static void HookLog(const std::string& msg) {
 }
 
 extern "C" void VirtualJoySync() {
-    if (!g_vJoyEnabled) return;
+    if (!g_vJoyEnabled) {
+        if (HotasMouseCompatibility::SupportsVirtualJoy()) {
+            HotasMouseCompatibility::SetVirtualJoySteering(false, 0.0f, 0.0f);
+        }
+        return;
+    }
+
+    if (HotasMouseCompatibility::SupportsVirtualJoy()) {
+        float dYaw = 0.0f;
+        float dPitch = 0.0f;
+        if (HotasMouseCompatibility::ExtractMouseAccumulatorDelta(&dYaw, &dPitch, true)) {
+            g_vYaw += dYaw;
+            g_vPitch += dPitch;
+            if (g_vRadius > 0.001f) {
+                g_vYawNorm = g_vYaw / g_vRadius;
+                g_vPitchNorm = g_vPitch / g_vRadius;
+            }
+            HotasMouseCompatibility::SetVirtualJoySteering(true, g_vYawNorm, g_vPitchNorm);
+        }
+        return;
+    }
 
     uintptr_t src = MouseAlignHook::GetSourcePtr();
     if (!src) return;
@@ -347,6 +368,9 @@ bool MouseAlignHook::UsesExternalAccumulatorProvider() {
 }
 
 bool MouseAlignHook::SupportsVirtualJoy() {
+    if (HotasMouseCompatibility::SupportsVirtualJoy()) {
+        return true;
+    }
     return !UsesExternalAccumulatorProvider();
 }
 
@@ -400,6 +424,9 @@ void MouseAlignHook::SetVirtualJoy(bool enabled, float yaw, float pitch) {
     if (g_vRadius > 0.001f) {
         g_vYawNorm = yaw / g_vRadius;
         g_vPitchNorm = pitch / g_vRadius;
+    }
+    if (!enabled && HotasMouseCompatibility::SupportsVirtualJoy()) {
+        HotasMouseCompatibility::SetVirtualJoySteering(false, 0.0f, 0.0f);
     }
 }
 

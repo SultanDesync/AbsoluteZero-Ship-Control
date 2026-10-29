@@ -1,9 +1,10 @@
 #include "Configuration.h"
-
+#include "SuppressBindingCodec.h"
 #include "RuntimePaths.h"
 
 #include <windows.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -51,6 +52,13 @@ int ReadInt(const char* section, const char* key, int fallback, const std::strin
     }
 }
 
+std::string ReadString(const char* section, const char* key, const std::string& fallback, const std::string& path) {
+    char value[256]{};
+    GetPrivateProfileStringA(section, key, fallback.c_str(), value,
+                             static_cast<DWORD>(std::size(value)), path.c_str());
+    return std::string(value);
+}
+
 Configuration::Config ReadConfiguration() {
     const auto defaults = ConfigPolicy::Defaults();
     const std::string path = RuntimePaths::IniPath().string();
@@ -61,15 +69,89 @@ Configuration::Config ReadConfiguration() {
     config.decayRate = ReadFloat("MouseAlign", "fDecayRate", defaults.decayRate, path);
     config.pollRateHz = ReadInt("MouseAlign", "iPollRateHz", defaults.pollRateHz, path);
     config.suppressKey = ReadInt("MouseAlign", "iSuppressKey", defaults.suppressKey, path);
+    config.suppressControl =
+        ReadBool("MouseAlign", "bSuppressKeyCtrl", defaults.suppressControl, path);
+    config.suppressAlt = ReadBool("MouseAlign", "bSuppressKeyAlt", defaults.suppressAlt, path);
+    config.suppressShift =
+        ReadBool("MouseAlign", "bSuppressKeyShift", defaults.suppressShift, path);
+    config.suppressBinding = ReadString("MouseAlign", "sSuppressBinding", "", path);
+    if (config.suppressBinding.empty()) {
+        config.suppressBinding = SuppressBindingCodec::Encode({
+            config.suppressKey, config.suppressControl, config.suppressAlt, config.suppressShift
+        });
+    } else {
+        SuppressBindingCodec::KeyboardBinding kb;
+        if (SuppressBindingCodec::Parse(config.suppressBinding, kb)) {
+            config.suppressKey = kb.virtualKey;
+            config.suppressControl = kb.control;
+            config.suppressAlt = kb.alt;
+            config.suppressShift = kb.shift;
+        } else if (config.suppressBinding.contains('@')) {
+            config.suppressKey = 0;
+            config.suppressControl = false;
+            config.suppressAlt = false;
+            config.suppressShift = false;
+        }
+    }
+
     config.centerOnPress =
         ReadInt("MouseAlign", "iActivationMode", defaults.centerOnPress ? 1 : 0, path) == 1;
     config.centerKey = ReadInt("MouseAlign", "iCenterKey", defaults.centerKey, path);
+    config.centerControl =
+        ReadBool("MouseAlign", "bCenterKeyCtrl", defaults.centerControl, path);
+    config.centerAlt = ReadBool("MouseAlign", "bCenterKeyAlt", defaults.centerAlt, path);
+    config.centerShift =
+        ReadBool("MouseAlign", "bCenterKeyShift", defaults.centerShift, path);
+    config.centerBinding = ReadString("MouseAlign", "sCenterBinding", "", path);
+    if (config.centerBinding.empty()) {
+        config.centerBinding = SuppressBindingCodec::Encode({
+            config.centerKey, config.centerControl, config.centerAlt, config.centerShift
+        });
+    } else {
+        SuppressBindingCodec::KeyboardBinding kb;
+        if (SuppressBindingCodec::Parse(config.centerBinding, kb)) {
+            config.centerKey = kb.virtualKey;
+            config.centerControl = kb.control;
+            config.centerAlt = kb.alt;
+            config.centerShift = kb.shift;
+        } else if (config.centerBinding.contains('@')) {
+            config.centerKey = 0;
+            config.centerControl = false;
+            config.centerAlt = false;
+            config.centerShift = false;
+        }
+    }
+
     config.enableLog = ReadBool("MouseAlign", "bLogEnabled", defaults.enableLog, path);
     config.virtualJoy = ReadBool("VirtualJoy", "bVirtualJoy", defaults.virtualJoy, path);
     config.vJoyToggleKey =
         ReadInt("VirtualJoy", "iVJoyToggleKey", defaults.vJoyToggleKey, path);
+    config.vJoyToggleControl =
+        ReadBool("VirtualJoy", "bVJoyToggleCtrl", defaults.vJoyToggleControl, path);
     config.vJoyToggleAlt =
         ReadBool("VirtualJoy", "bVJoyToggleAlt", defaults.vJoyToggleAlt, path);
+    config.vJoyToggleShift =
+        ReadBool("VirtualJoy", "bVJoyToggleShift", defaults.vJoyToggleShift, path);
+    config.vJoyToggleBinding = ReadString("VirtualJoy", "sVJoyToggleBinding", "", path);
+    if (config.vJoyToggleBinding.empty()) {
+        config.vJoyToggleBinding = SuppressBindingCodec::Encode({
+            config.vJoyToggleKey, config.vJoyToggleControl, config.vJoyToggleAlt, config.vJoyToggleShift
+        });
+    } else {
+        SuppressBindingCodec::KeyboardBinding kb;
+        if (SuppressBindingCodec::Parse(config.vJoyToggleBinding, kb)) {
+            config.vJoyToggleKey = kb.virtualKey;
+            config.vJoyToggleControl = kb.control;
+            config.vJoyToggleAlt = kb.alt;
+            config.vJoyToggleShift = kb.shift;
+        } else if (config.vJoyToggleBinding.contains('@')) {
+            config.vJoyToggleKey = 0;
+            config.vJoyToggleControl = false;
+            config.vJoyToggleAlt = false;
+            config.vJoyToggleShift = false;
+        }
+    }
+
     return ConfigPolicy::Sanitize(config);
 }
 
@@ -85,7 +167,7 @@ bool WriteAtomically(const Configuration::Config& config) {
             return false;
         }
         stream << "; AbsoluteZero.ini - Mouse Alignment Assist for Starfield\n"
-               << "; Managed by AbsoluteZero; Absolute Workbench writes through the daughter API.\n\n"
+               << "; Managed by AbsoluteZero; Absolute Control writes through the subscriber API.\n\n"
                << "[MouseAlign]\n"
                << "bEnabled = " << Boolean(config.enabled) << '\n'
                << "fRadius = " << std::format("{:.3f}", config.radius) << '\n'
@@ -93,13 +175,24 @@ bool WriteAtomically(const Configuration::Config& config) {
                << "fDecayRate = " << std::format("{:.3f}", config.decayRate) << '\n'
                << "iPollRateHz = " << config.pollRateHz << '\n'
                << std::format("iSuppressKey = 0x{:02X}\n", config.suppressKey)
+               << "bSuppressKeyCtrl = " << Boolean(config.suppressControl) << '\n'
+               << "bSuppressKeyAlt = " << Boolean(config.suppressAlt) << '\n'
+               << "bSuppressKeyShift = " << Boolean(config.suppressShift) << '\n'
+               << "sSuppressBinding = " << config.suppressBinding << '\n'
                << "iActivationMode = " << (config.centerOnPress ? 1 : 0) << '\n'
                << std::format("iCenterKey = 0x{:02X}\n", config.centerKey)
+               << "bCenterKeyCtrl = " << Boolean(config.centerControl) << '\n'
+               << "bCenterKeyAlt = " << Boolean(config.centerAlt) << '\n'
+               << "bCenterKeyShift = " << Boolean(config.centerShift) << '\n'
+               << "sCenterBinding = " << config.centerBinding << '\n'
                << "bLogEnabled = " << Boolean(config.enableLog) << "\n\n"
                << "[VirtualJoy]\n"
                << "bVirtualJoy = " << Boolean(config.virtualJoy) << '\n'
                << std::format("iVJoyToggleKey = 0x{:02X}\n", config.vJoyToggleKey)
-               << "bVJoyToggleAlt = " << Boolean(config.vJoyToggleAlt) << '\n';
+               << "bVJoyToggleCtrl = " << Boolean(config.vJoyToggleControl) << '\n'
+               << "bVJoyToggleAlt = " << Boolean(config.vJoyToggleAlt) << '\n'
+               << "bVJoyToggleShift = " << Boolean(config.vJoyToggleShift) << '\n'
+               << "sVJoyToggleBinding = " << config.vJoyToggleBinding << '\n';
         stream.flush();
         if (!stream) {
             std::error_code error;

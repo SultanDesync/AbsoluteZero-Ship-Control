@@ -3,20 +3,32 @@
 #include <algorithm>
 #include <cmath>
 #include <compare>
+#include <string>
 
 namespace ConfigPolicy {
 struct Config {
     bool enabled{true};
-    bool virtualJoy{};
+    bool virtualJoy{true};
     int vJoyToggleKey{0x60};
+    bool vJoyToggleControl{};
     bool vJoyToggleAlt{true};
+    bool vJoyToggleShift{};
+    std::string vJoyToggleBinding{"keyboard:0x60;ctrl=0;alt=1;shift=0"};
     float radius{140.0F};
     int idleMs{80};
     float decayRate{12.0F};
     int pollRateHz{120};
     int suppressKey{0x42};
+    bool suppressControl{};
+    bool suppressAlt{};
+    bool suppressShift{};
+    std::string suppressBinding{"keyboard:0x42;ctrl=0;alt=0;shift=0"};
     bool centerOnPress{};
     int centerKey{0x43};
+    bool centerControl{};
+    bool centerAlt{};
+    bool centerShift{};
+    std::string centerBinding{"keyboard:0x43;ctrl=0;alt=0;shift=0"};
     bool enableLog{};
 
     auto operator<=>(const Config&) const = default;

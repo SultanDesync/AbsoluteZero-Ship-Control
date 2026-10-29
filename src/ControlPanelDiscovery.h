@@ -7,10 +7,9 @@
 
 namespace ControlPanelSubscriber::Discovery {
 
-inline constexpr std::array<std::wstring_view, 3> kHostModuleNames{
+inline constexpr std::array<std::wstring_view, 2> kHostModuleNames{
     L"AbsoluteControlPanel.dll",
     L"AbsoluteControlPanelResearchDev.dll",
-    L"AbsoluteControlPanelResearch.dll",
 };
 
 enum class RegistrationDecision {
@@ -22,7 +21,7 @@ enum class RegistrationDecision {
 [[nodiscard]] constexpr RegistrationDecision DecideRegistration(
     AbsoluteControlPanelApi::Result result, bool finalAttempt) noexcept {
     using AbsoluteControlPanelApi::Result;
-    if (result == Result::Ok || result == Result::Duplicate) {
+    if (result == Result::Ok) {
         return RegistrationDecision::UseControlPanel;
     }
     if (result == Result::NotReady && !finalAttempt) {
