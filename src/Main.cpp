@@ -1,12 +1,10 @@
 #include "AlignmentAssist.h"
 #include "Configuration.h"
-#include "ControlPanelDiscovery.h"
-#include "ControlPanelSubscriber.h"
 #include "HotasMouseCompatibility.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
+#include "SettingsPage.h"
 #include "SuiteState.h"
-#include "WorkbenchHost.h"
 
 #include <SFSE/Interfaces.h>
 #include <windows.h>
@@ -17,7 +15,6 @@
 
 namespace {
 std::atomic<bool> g_runtimeInitialized{};
-std::atomic<bool> g_frontendSelected{};
 
 LONG NTAPI CrashLogHandler(EXCEPTION_POINTERS* exceptionInfo) {
     if (!exceptionInfo || !exceptionInfo->ExceptionRecord || !exceptionInfo->ContextRecord) {
@@ -113,51 +110,10 @@ void InitializeRuntime() {
     RuntimePaths::AppendLog("[Main]", "Alignment worker started after post-post-load selection.");
 }
 
-void SelectFallbackFrontend() {
-    if (g_frontendSelected.exchange(true)) return;
-    const auto selection = WorkbenchHost::Select();
-    SuiteState::SetHostActive(selection == WorkbenchHost::Selection::Active);
-}
-
-void SelectFrontend(bool finalAttempt) {
-    if (g_frontendSelected.load()) return;
-    const auto result = ControlPanelSubscriber::RegisterDiscoveredHost();
-    using ControlPanelSubscriber::Discovery::RegistrationDecision;
-    const auto decision = ControlPanelSubscriber::Discovery::DecideRegistration(
-        result, finalAttempt);
-    if (decision == RegistrationDecision::UseControlPanel) {
-        g_frontendSelected.store(true);
-        SuiteState::SetHostActive(true);
-        RuntimePaths::AppendLogAlways(
-            "[ControlPanel]",
-            "Registered the current Mouse Alignment page with Absolute Control Panel.");
-        return;
-    }
-    if (decision == RegistrationDecision::RetryAtPostPostDataLoad) {
-        RuntimePaths::AppendLogAlways(
-            "[ControlPanel]",
-            "Absolute Control Panel is not ready; registration will retry at "
-            "post-post-data-load.");
-        return;
-    }
-    RuntimePaths::AppendLogAlways(
-        "[ControlPanel]",
-        result == AbsoluteControlPanelApi::Result::NotFound
-            ? "Absolute Control Panel is not installed; selecting the legacy Workbench fallback."
-            : std::format(
-                  "Absolute Control Panel registration was unavailable (result {}); selecting "
-                  "the legacy Workbench fallback.",
-                  static_cast<std::uint32_t>(result)));
-    SelectFallbackFrontend();
-}
-
 void OnSfseMessage(SFSE::MessagingInterface::Message* message) {
     if (!message) return;
     if (message->type == SFSE::MessagingInterface::kPostPostLoad) {
         InitializeRuntime();
-    } else if (message->type == SFSE::MessagingInterface::kPostDataLoad ||
-               message->type == SFSE::MessagingInterface::kPostPostDataLoad) {
-        SelectFrontend(message->type == SFSE::MessagingInterface::kPostPostDataLoad);
     }
 }
 
@@ -181,7 +137,7 @@ bool RegisterSfseListener(const SFSE::LoadInterface* sfse) noexcept {
 SFSEPluginLoad(const SFSE::LoadInterface* sfse) {
     RuntimePaths::EnableFileLogging();
     InstallCrashLogger();
-    RuntimePaths::AppendLogAlways("[Main]", "AbsoluteZero 1.4.0 startup.");
+    RuntimePaths::AppendLogAlways("[Main]", "AbsoluteZero 1.5.0 startup.");
     Configuration::Load();
 
     if (!sfse) {
@@ -197,5 +153,13 @@ SFSEPluginLoad(const SFSE::LoadInterface* sfse) {
         return true;
     }
     RuntimePaths::AppendLog("[Main]", "Configuration API ready; runtime initialization deferred.");
+
+    // The settings page is optional. With bMenuEnabled = false no renderer hook exists.
+    if (!Configuration::Get().menuEnabled) {
+        RuntimePaths::AppendLog("[Main]", "Settings page disabled by bMenuEnabled.");
+    } else if (!SettingsPage::Install()) {
+        RuntimePaths::AppendLog(
+            "[Main]", "Settings page unavailable; INI and hotkeys still work.");
+    }
     return true;
 }

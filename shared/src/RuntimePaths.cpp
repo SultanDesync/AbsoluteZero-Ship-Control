@@ -51,6 +51,10 @@ namespace RuntimePaths {
         GetPrivateProfileStringW(L"MouseAlign", L"bLogEnabled", L"0", value, static_cast<DWORD>(std::size(value)), IniPath().c_str());
 
         std::wstring_view text{ value };
+        // The shipped INI puts a comment after the value.
+        if (const auto comment = text.find(L';'); comment != std::wstring_view::npos) {
+            text = text.substr(0, comment);
+        }
         while (!text.empty() && std::iswspace(text.front())) {
             text.remove_prefix(1);
         }

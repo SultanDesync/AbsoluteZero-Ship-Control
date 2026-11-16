@@ -22,6 +22,13 @@ bool ReadBool(const char* section, const char* key, bool fallback, const std::st
     GetPrivateProfileStringA(section, key, fallback ? "true" : "false", value,
                              static_cast<DWORD>(std::size(value)), path.c_str());
     std::string normalized(value);
+    // The shipped INI puts a comment after the value: keep only what comes before it.
+    if (const auto comment = normalized.find(';'); comment != std::string::npos) {
+        normalized.erase(comment);
+    }
+    while (!normalized.empty() && (normalized.back() == ' ' || normalized.back() == '\t')) {
+        normalized.pop_back();
+    }
     std::ranges::transform(normalized, normalized.begin(),
                            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return normalized == "true" || normalized == "1" || normalized == "yes" ||
@@ -152,6 +159,12 @@ Configuration::Config ReadConfiguration() {
         }
     }
 
+    config.menuEnabled = ReadBool("Menu", "bMenuEnabled", defaults.menuEnabled, path);
+    config.menuKey = ReadInt("Menu", "iMenuKey", defaults.menuKey, path);
+    config.menuControl = ReadBool("Menu", "bMenuKeyCtrl", defaults.menuControl, path);
+    config.menuAlt = ReadBool("Menu", "bMenuKeyAlt", defaults.menuAlt, path);
+    config.menuShift = ReadBool("Menu", "bMenuKeyShift", defaults.menuShift, path);
+
     return ConfigPolicy::Sanitize(config);
 }
 
@@ -167,7 +180,7 @@ bool WriteAtomically(const Configuration::Config& config) {
             return false;
         }
         stream << "; AbsoluteZero.ini - Mouse Alignment Assist for Starfield\n"
-               << "; Managed by AbsoluteZero; Absolute Control writes through the subscriber API.\n\n"
+               << "; Rewritten by AbsoluteZero when settings are saved in game.\n\n"
                << "[MouseAlign]\n"
                << "bEnabled = " << Boolean(config.enabled) << '\n'
                << "fRadius = " << std::format("{:.3f}", config.radius) << '\n'
@@ -192,7 +205,13 @@ bool WriteAtomically(const Configuration::Config& config) {
                << "bVJoyToggleCtrl = " << Boolean(config.vJoyToggleControl) << '\n'
                << "bVJoyToggleAlt = " << Boolean(config.vJoyToggleAlt) << '\n'
                << "bVJoyToggleShift = " << Boolean(config.vJoyToggleShift) << '\n'
-               << "sVJoyToggleBinding = " << config.vJoyToggleBinding << '\n';
+               << "sVJoyToggleBinding = " << config.vJoyToggleBinding << "\n\n"
+               << "[Menu]\n"
+               << "bMenuEnabled = " << Boolean(config.menuEnabled) << '\n'
+               << std::format("iMenuKey = 0x{:02X}\n", config.menuKey)
+               << "bMenuKeyCtrl = " << Boolean(config.menuControl) << '\n'
+               << "bMenuKeyAlt = " << Boolean(config.menuAlt) << '\n'
+               << "bMenuKeyShift = " << Boolean(config.menuShift) << '\n';
         stream.flush();
         if (!stream) {
             std::error_code error;

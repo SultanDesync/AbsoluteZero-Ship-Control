@@ -1,7 +1,15 @@
-[center][size=6][color=#00ccff][b]AbsoluteZero 1.4.0[/b][/color][/size]
+[center][size=6][color=#00ccff][b]AbsoluteZero 1.5.0[/b][/color][/size]
 [size=4][b][color=#ffaa00]Mouse alignment and locked-reticule steering for Starfield.[/color][/b][/size][/center]
 
-AbsoluteZero gently returns ship mouse aim toward center after input stops. Its Locked Reticule mode keeps the crosshair centered while translating mouse motion into direct ship steering. It runs standalone and integrates with the shared Absolute Control menu.
+AbsoluteZero gently returns ship mouse aim toward center after input stops. Its Locked Reticule mode keeps the crosshair centered while translating mouse motion into direct ship steering. It is a single standalone plugin with its own small settings page.
+
+[line]
+
+[center][size=5][color=#ffcc00][b]Why 1.5.0 is simpler[/b][/color][/size][/center]
+
+I am simplifying my mods. Over the last few versions AbsoluteZero grew a settings page that lived inside the Absolute Control menu framework, which meant a second mod to install, a shared API to keep in step, and more that could break on a game update. This mod was popular long before any of that, with nothing but an INI and a few hotkeys.
+
+So 1.5.0 is rebuilt to stand on its own. It no longer depends on, or integrates with, the old menu framework. The steering is the same code you have been flying. In place of the framework page there is one plain built-in settings page, and the INI and hotkeys work exactly as before if you never open it.
 
 [line]
 
@@ -9,56 +17,67 @@ AbsoluteZero gently returns ship mouse aim toward center after input stops. Its 
 
 [list]
 [*][b]Idle mouse centering[/b] with configurable radius, delay, and exponential decay.[/*]
-[*][b]Locked Reticule mode[/b] for centered-crosshair direct mouse steering with in-menu toggle and hotkey.[/*]
-[*][b]Interactive centering lab[/b] that responds continuously to mouse movement and demonstrates the configured activation radius, idle delay, and return rate.[/*]
-[*][b]Dedicated Bindings tab[/b] with support for keyboard shortcuts and physical DirectInput joystick buttons / POV hats.[/*]
-[*][b]Center on press mode[/b] with its own binding as an alternative to automatic idle centering.[/*]
-[*][b]Hold-to-suppress binding[/b] for temporary unrestricted mouse aim in automatic mode.[/*]
-[*][b]Native MOD OPTIONS multi-tab page[/b] through Absolute Control, including binding capture and live settings.[/*]
-[*][b]Headless fallback[/b] through the INI and live-tuning hotkeys.[/*]
-[*][b]Safe HOTAS pairing[/b] through explicit axis ownership and backward-compatible shared writer integration.[/*]
+[*][b]Locked Reticule mode[/b] for centered-crosshair direct mouse steering, with a hotkey toggle.[/*]
+[*][b]Built-in settings page[/b] (default [font=Courier New]F8[/font]): checkboxes and sliders for the tuning values, with Apply, Save to INI and Reset to defaults. Apply takes effect at once.[/*]
+[*][b]Center on press mode[/b] with its own key as an alternative to automatic idle centering.[/*]
+[*][b]Hold-to-suppress key[/b] for temporary unrestricted mouse aim in automatic mode.[/*]
+[*][b]INI and live-tuning hotkeys[/b] for everything, with the settings page switched off if you prefer.[/*]
+[*][b]Safe AbsoluteHOTAS pairing[/b] through explicit axis ownership and its shared writer.[/*]
+[/list]
+
+[line]
+
+[center][size=5][color=#ffaa00][b]Changes you will notice when updating[/b][/color][/size][/center]
+
+[list]
+[*][b]The Absolute Control page is gone.[/b] AbsoluteZero no longer appears under MOD OPTIONS. Press [font=Courier New]F8[/font] for its own page.[/*]
+[*][b]Use the mouse on the page while the game is paused.[/b] In flight the game holds the cursor at the center of the screen, so pause first, or use the arrow keys, Tab, Space and Enter.[/*]
+[*][b]Locked Reticule now starts on[/b], as the INI has always said it should. Earlier versions misread any true/false setting that had a comment after it on the same line, so the shipped [font=Courier New]bVirtualJoy = true[/font] was treated as off. Set it to [font=Courier New]false[/font] if you prefer the old start-up behaviour.[/*]
+[*][b]The Locked Reticule toggle is Alt+Numpad0[/b], for the same reason: the Alt requirement in the shipped INI was being ignored, which left it on plain Numpad0.[/*]
+[*][b]The in-menu binding capture is gone.[/b] Hotkeys are set in the INI. Bindings you already made keep working; joystick button bindings still need AbsoluteHOTAS installed, as before.[/*]
 [/list]
 
 [line]
 
 [center][size=5][color=#ffaa00][b]AbsoluteHOTAS compatibility[/b][/color][/size][/center]
 
-AbsoluteZero coordinates with AbsoluteHOTAS safely without competing writer hooks. When both are installed, AbsoluteZero owns mouse pitch/yaw steering while HOTAS controls roll, strafe, throttle, buttons, and profiles through its shared writer seam.
+AbsoluteZero coordinates with AbsoluteHOTAS without competing writer hooks. When both are installed, AbsoluteZero owns mouse pitch/yaw steering while HOTAS controls roll, strafe, throttle, buttons, and profiles through its shared writer.
 
-A joystick cannot control pitch and yaw while AbsoluteZero is actively driving them. In paired mode, native idle centering remains fully supported.
+A joystick cannot control pitch and yaw while AbsoluteZero is actively driving them. In paired mode, idle centering remains fully supported.
 
 [line]
 
 [center][size=5][color=#00ccff][b]Requirements and installation[/b][/color][/size][/center]
 
 [list]
-[*]Starfield 1.16.242 or 1.16.244[/*]
-[*][url=https://sfse.silverlock.org/]SFSE[/url] 0.2.20 or later[/*]
+[*]Starfield 1.16.244[/*]
+[*][url=https://sfse.silverlock.org/]SFSE[/url] 0.2.21 or later[/*]
 [*]No Address Library required[/*]
-[*]Absolute Control is optional but recommended for the native in-game editor[/*]
+[*]No other mod required[/*]
 [/list]
 
-Install normally with MO2 or Vortex, or place [font=Courier New]AbsoluteZero.dll[/font] and [font=Courier New]AbsoluteZero.ini[/font] in [font=Courier New]Data\SFSE\Plugins\[/font].
+Install normally with MO2 or Vortex, or place [font=Courier New]AbsoluteZero.dll[/font] and [font=Courier New]AbsoluteZero.ini[/font] in [font=Courier New]Data\SFSE\Plugins\[/font]. You can delete [font=Courier New]AbsoluteZero.workbench.json[/font] from an older install; it is no longer used.
 
-With Absolute Control installed, open the Pause Menu, select [color=#ffaa00][b]MOD OPTIONS[/b][/color], and choose [b]AbsoluteZero[/b].
+The settings page draws over the game the way other overlays do. If it clashes with another overlay or a frame-generation tool on your system, set [font=Courier New]bMenuEnabled = false[/font] under [font=Courier New][Menu][/font] and AbsoluteZero will not touch the renderer at all.
 
 [line]
 
 [center][size=5][color=#00ccff][b]Live tuning & shortcuts[/b][/color][/size][/center]
 
 [list]
-[*][font=Courier New]Alt+Numpad+ / Alt+Numpad-[/font] — radius ±2.0[/*]
-[*][font=Courier New]Ctrl+Numpad+ / Ctrl+Numpad-[/font] — idle delay ±10 ms[/*]
-[*][font=Courier New]Shift+Numpad+ / Shift+Numpad-[/font] — decay rate ±0.5[/*]
-[*][font=Courier New]Ctrl+Alt+0[/font] — toggle idle centering[/*]
-[*][font=Courier New]Alt+Numpad0[/font] — toggle Locked Reticule mode (default; remappable in MOD OPTIONS)[/*]
-[*][font=Courier New]Ctrl+Alt+S[/font] — save current settings[/*]
+[*][font=Courier New]F8[/font]: open or close the settings page (change with [font=Courier New]iMenuKey[/font])[/*]
+[*][font=Courier New]Alt+Numpad+ / Alt+Numpad-[/font]: radius +/- 2.0[/*]
+[*][font=Courier New]Ctrl+Numpad+ / Ctrl+Numpad-[/font]: idle delay +/- 10 ms[/*]
+[*][font=Courier New]Shift+Numpad+ / Shift+Numpad-[/font]: decay rate +/- 0.5[/*]
+[*][font=Courier New]Ctrl+Alt+0[/font]: toggle idle centering[/*]
+[*][font=Courier New]Alt+Numpad0[/font]: toggle Locked Reticule mode (change in the INI)[/*]
+[*][font=Courier New]Ctrl+Alt+S[/font]: save current settings[/*]
 [/list]
 
-Logging is off by default and occurs only when [font=Courier New]bLogEnabled=true[/font].
+Logging is off by default and occurs only when [font=Courier New]bLogEnabled = true[/font].
 
 [line]
 
 [center][url=https://github.com/SultanDesync/AbsoluteZero-Ship-Control][color=#00ff88][b]Complete Guide and Source[/b][/color][/url]
 
-[url=https://www.nexusmods.com/starfield/mods/16668]AbsoluteHOTAS[/url] · [url=https://www.nexusmods.com/starfield/mods/17872]Absolute Head Tracking[/url][/center]
+[url=https://www.nexusmods.com/starfield/mods/16668]AbsoluteHOTAS[/url] - [url=https://www.nexusmods.com/starfield/mods/17872]Absolute Head Tracking[/url][/center]

@@ -2,6 +2,11 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "dependencies": [
     "commonlibsf",
+    {
+      "name": "imgui",
+      "features": ["dx12-binding", "win32-binding"]
+    },
+    "minhook",
     "simpleini",
     "spdlog"
   ],

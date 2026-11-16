@@ -1,7 +1,6 @@
 #include "AlignmentAssist.h"
 
 #include "Configuration.h"
-#include "ControlPanelSubscriber.h"
 #include "InputBusClient.h"
 #include "MouseAlignHook.h"
 #include "RuntimePaths.h"
@@ -57,9 +56,7 @@ void ProcessHotkeys(HotkeyState& previous, Configuration::Config& config) {
     const bool shift = KeyDown(VK_SHIFT);
     const bool plus = KeyDown(VK_ADD);
     const bool minus = KeyDown(VK_SUBTRACT);
-    const bool suppressed = ControlPanelSubscriber::IsMenuOpen() ||
-                            ControlPanelSubscriber::IsInputCaptureActive() ||
-                            SuiteState::WorkbenchOpen() ||
+    const bool suppressed = SuiteState::WorkbenchOpen() ||
                             SuiteState::InputCaptureActive();
     bool changed{};
     const char* changedParameter{};
@@ -188,8 +185,7 @@ void Poll(std::stop_token stopToken) {
             MouseAlignHook::SetVirtualJoy(false, 0.0F, 0.0F);
             continue;
         }
-        const bool centerInputSuppressed = ControlPanelSubscriber::IsMenuOpen() ||
-            ControlPanelSubscriber::IsInputCaptureActive() ||
+        const bool centerInputSuppressed =
             SuiteState::WorkbenchOpen() || SuiteState::InputCaptureActive();
         const bool centerDown = ShortcutDown(config.centerKey, config.centerControl,
             config.centerAlt, config.centerShift);

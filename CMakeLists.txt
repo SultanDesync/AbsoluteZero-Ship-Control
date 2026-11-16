@@ -5,7 +5,7 @@ set(X_VCPKG_APPLOCAL_DEPS_INSTALL OFF)
 
 project(
   AbsoluteZero
-  VERSION 1.4.0
+  VERSION 1.5.0
   DESCRIPTION "Mouse Alignment Assist for Starfield"
   LANGUAGES CXX
 )
@@ -24,6 +24,8 @@ configure_file(
 
 find_package(CommonLibSF CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
+find_package(minhook CONFIG REQUIRED)
 find_path(SIMPLEINI_INCLUDE_DIRS SimpleIni.h)
 
 set(shared_sources
@@ -47,19 +49,20 @@ set(absolute_zero_sources
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteApi.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteState.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuiteState.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/WorkbenchHost.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/WorkbenchHost.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelSubscriber.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelSubscriber.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/ControlPanelDiscovery.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/UIHook.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/UIHook.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/UIHookInternal.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/UIHookSwapChain.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/UIHookRenderer.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/UIHookInput.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/SettingsPage.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/SettingsPage.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/SuppressBindingCodec.h
   ${CMAKE_CURRENT_SOURCE_DIR}/src/InputBusClient.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/InputBusClient.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteInputBusAPI.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/AbsoluteWorkbenchAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteControlPanelAPI.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/LiveComponentsExperimentalAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteZeroAPI.h
   ${CMAKE_CURRENT_SOURCE_DIR}/include/AbsoluteMouseSteeringAPI.h
   ${CMAKE_CURRENT_BINARY_DIR}/version.rc
@@ -106,7 +109,7 @@ target_include_directories(AbsoluteZero SYSTEM PRIVATE
 # CommonLibSF headers define the SFSE ABI used by this plugin, but linking its
 # runtime library pulls REL::IDDatabase into the DLL and creates an unintended
 # Address Library requirement. AbsoluteZero uses the raw SFSE interfaces below.
-target_link_libraries(AbsoluteZero PRIVATE spdlog::spdlog)
+target_link_libraries(AbsoluteZero PRIVATE spdlog::spdlog imgui::imgui minhook::minhook d3d12 dxgi)
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
   set(BUILD_NAME Debug)
@@ -124,14 +127,6 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:AbsoluteZero> ${PACKAGE_PLUGIN_DIR}
 )
 
-add_custom_command(
-  TARGET AbsoluteZero
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy
-    ${CMAKE_CURRENT_SOURCE_DIR}/config/AbsoluteZero.workbench.json
-    ${PACKAGE_PLUGIN_DIR}
-)
-
 include(CTest)
 if(BUILD_TESTING)
   add_executable(config_policy_test tests/config_policy_test.cpp)
@@ -143,23 +138,6 @@ if(BUILD_TESTING)
   target_compile_features(suite_api_layout_test PRIVATE cxx_std_23)
   target_include_directories(suite_api_layout_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
   add_test(NAME suite_api_layout COMMAND suite_api_layout_test)
-
-  add_executable(control_panel_subscriber_test
-    tests/control_panel_subscriber_test.cpp
-    src/ControlPanelSubscriber.cpp
-    src/SuppressBindingCodec.cpp
-    src/InputBusClient.cpp
-    shared/src/RuntimePaths.cpp
-  )
-  target_compile_features(control_panel_subscriber_test PRIVATE cxx_std_23)
-  target_compile_definitions(control_panel_subscriber_test PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-  target_include_directories(control_panel_subscriber_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/shared/include
-  )
-  add_test(NAME control_panel_subscriber COMMAND control_panel_subscriber_test)
-
 endif()
 
 add_custom_command(

@@ -6,6 +6,7 @@ void SetHookInstalled(bool value) noexcept;
 void SetRuntimeReady(bool value) noexcept;
 void SetHostActive(bool value) noexcept;
 void SetWorkbenchSession(bool open, bool inputCaptureActive) noexcept;
+void SetMenuOpen(bool value) noexcept;
 [[nodiscard]] bool InactiveByHOTAS() noexcept;
 [[nodiscard]] bool HookInstalled() noexcept;
 [[nodiscard]] bool RuntimeReady() noexcept;

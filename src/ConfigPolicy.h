@@ -30,6 +30,11 @@ struct Config {
     bool centerShift{};
     std::string centerBinding{"keyboard:0x43;ctrl=0;alt=0;shift=0"};
     bool enableLog{};
+    bool menuEnabled{true};
+    int menuKey{0x77};
+    bool menuControl{};
+    bool menuAlt{};
+    bool menuShift{};
 
     auto operator<=>(const Config&) const = default;
 };
@@ -51,6 +56,7 @@ struct Config {
     config.suppressKey = std::clamp(config.suppressKey, 0, 255);
     config.centerKey = std::clamp(config.centerKey, 0, 255);
     config.vJoyToggleKey = std::clamp(config.vJoyToggleKey, 0, 255);
+    config.menuKey = std::clamp(config.menuKey, 0, 255);
     return config;
 }
 } // namespace ConfigPolicy
