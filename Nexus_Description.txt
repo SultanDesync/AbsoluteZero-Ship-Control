@@ -78,6 +78,8 @@ Logging is off by default and occurs only when [font=Courier New]bLogEnabled = t
 
 [line]
 
+[center][size=2]The settings page uses [url=https://github.com/ocornut/imgui]Dear ImGui[/url] (MIT License, Omar Cornut) and [url=https://github.com/TsudaKageyu/minhook]MinHook[/url] (BSD 2-Clause License, Tsuda Kageyu).[/size][/center]
+
 [center][url=https://github.com/SultanDesync/AbsoluteZero-Ship-Control][color=#00ff88][b]Complete Guide and Source[/b][/color][/url]
 
 [url=https://www.nexusmods.com/starfield/mods/16668]AbsoluteHOTAS[/url] - [url=https://www.nexusmods.com/starfield/mods/17872]Absolute Head Tracking[/url][/center]
